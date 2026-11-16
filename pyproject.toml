@@ -1,0 +1,56 @@
+[project]
+name = "idagba"
+version = "0.1.0"
+description = "Game Boy Advance ROM and multiboot loader plus a Hex-Rays lifter for BIOS SWI calls."
+requires-python = ">=3.11"
+license = "MIT"
+dependencies = [
+    "ida-domain>=0.6.0",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.2.0",
+    "ruff>=0.17.5",
+    "ty>=0.0.104",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = [".", "tests"]
+addopts = ["-ra", "--strict-markers", "--strict-config"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+
+[tool.ruff.format]
+quote-style = "single"
+
+[tool.ruff.lint]
+select = ["ALL"]
+ignore = [
+    "D",        # docstring rules
+    "COM812",   # formatter conflict
+    "ISC001",   # formatter conflict
+    "CPY001",   # no per-file copyright headers; the license is declared in the manifests
+    "PLR2004",  # hardware addresses and header offsets are the domain
+    "C901", "PLR0911", "PLR0912", "PLR0913", "PLR0915",  # ported recognition/analysis routines keep their shape
+]
+
+[tool.ruff.lint.flake8-quotes]
+inline-quotes = "single"
+
+[tool.ruff.lint.per-file-ignores]
+"idagba_plugin.py" = ["INP001", "N802", "ARG002"]
+"loaders/*.py" = ["INP001"]
+"idagba/lifter.py" = ["ARG002", "PLW0603"]
+"idagba/loader/analysis.py" = ["PLW0603"]
+"tests/*.py" = ["INP001", "S101", "ANN"]
+"tests/test_native.py" = ["E402"]
+
+[tool.ty.environment]
+python-version = "3.11"
+
+[tool.ty.terminal]
+error-on-warning = true
