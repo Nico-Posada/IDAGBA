@@ -170,15 +170,14 @@ REGISTERS = (
     Register(0x10C, 2,  'REG_TM3CNT_L',   'R/W: timer 3 counter/reload'),
     Register(0x10E, 2,  'REG_TM3CNT_H',   'R/W: timer 3 control'),
 
-    # SIO; nonoverlapping multiplayer layout at 0x120 (the pair aliases the
-    # 32-bit SIODATA32 view). No overlapping word item is defined here.
-    Register(0x120, 2,  'REG_SIOMULTI0',  'R/W: multiplayer data 0; pair aliases 32-bit SIODATA32'),
-    Register(0x122, 2,  'REG_SIOMULTI1',  'R/W: multiplayer data 1; pair aliases 32-bit SIODATA32'),
+    # Serial I/O
+    Register(0x120, 2,  'REG_SIOMULTI0',  'R/W: multiplayer data 0 OR low 16 bits of SIODATA32'),
+    Register(0x122, 2,  'REG_SIOMULTI1',  'R/W: multiplayer data 1 OR high 16 bits of SIODATA32'),
     Register(0x124, 2,  'REG_SIOMULTI2',  'R/W: multiplayer data 2'),
     Register(0x126, 2,  'REG_SIOMULTI3',  'R/W: multiplayer data 3'),
     Register(0x128, 2,  'REG_SIOCNT',     'R/W: serial control/status'),
-    Register(0x12A, 2,  'REG_SIOMLT_SEND','R/W: multiplayer send data; aliases SIODATA8 in other modes'),
-    Register(0x130, 2,  'REG_KEYINPUT',   'R: keypad state, active-low (0 = pressed)'),
+    Register(0x12A, 2,  'REG_SIOMLT_SEND','R/W: multiplayer send data (can alias SIODATA8 in other modes)'),
+    Register(0x130, 2,  'REG_KEYINPUT',   'R: keypad state (0 = pressed)'),
     Register(0x132, 2,  'REG_KEYCNT',     'R/W: keypad interrupt control'),
     Register(0x134, 2,  'REG_RCNT',       'R/W: serial mode/general-purpose data'),
     Register(0x140, 2,  'REG_JOYCNT',     'R/W: JOY bus control'),
