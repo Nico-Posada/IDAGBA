@@ -117,29 +117,37 @@ class Annotator:
             self.data(eeprom.start_ea, 2, 2, 'GBA_EEPROM', declaration='volatile unsigned short value;')
 
     def _video_memory(self) -> None:
+        decls = """
+            struct GBA_PaletteRAM {
+                unsigned short BG_PALETTE[256];
+                unsigned short OBJ_PALETTE[256];
+            };
+
+            struct GBA_OAMEntry {
+                unsigned short attr0;
+                unsigned short attr1;
+                unsigned short attr2;
+                short affine;
+            };
+
+            struct GBA_OAM {
+                struct GBA_OAMEntry obj[128];
+            };
+        """
+
         require(
             self.db.types.parse_declarations(
                 None,  # ty: ignore[invalid-argument-type]  # None selects the database's local library
-                'struct GBA_PaletteRAM { unsigned short BG_PALETTE[256]; unsigned short OBJ_PALETTE[256]; };'
-                'struct GBA_OAMEntry'
-                ' { unsigned short attr0; unsigned short attr1; unsigned short attr2; short affine; };'
-                'struct GBA_OAM { struct GBA_OAMEntry obj[128]; };',
+                decls,
             )
             == 0,
             'Cannot define GBA palette/OAM types',
         )
+
         self.data(BASE_PALETTE_RAM, SIZE_PALETTE_RAM, 2, 'GBA_PALETTE', declaration='struct GBA_PaletteRAM value;')
-        self.comment(
-            BASE_PALETTE_RAM,
-            'BGR555 colors: bits 0..4 red, 5..9 green, 10..14 blue; bit 15 unused. '
-            'BG palette entry 0 is the backdrop color; OBJ palette starts at 0x05000200.',
-        )
+        self.comment(BASE_PALETTE_RAM, 'BG colors, then OBJ colors at 0x05000200. Each color is 15-bit BGR.')
         self.data(BASE_OAM, SIZE_OAM, 2, 'GBA_OAM', declaration='struct GBA_OAM value;')
-        self.comment(
-            BASE_OAM,
-            'OBJ attributes 0..2 per entry; the affine halfwords of entries 4n..4n+3 form '
-            'matrix n (PA, PB, PC, PD; signed 8.8 fixed point).',
-        )
+        self.comment(BASE_OAM, '128 sprites. The affine fields of every four sprites hold one affine matrix.')
 
     def _io_registers(self) -> None:
         scalar = {1: 'unsigned char', 2: 'unsigned short', 4: 'unsigned int'}
@@ -166,20 +174,38 @@ class Annotator:
     def report(self, facts: HeaderFacts, recovery: StartupRecovery | StartupRecoveryFailure) -> None:
         base = self.image.base
         kind = 'multiboot image' if self.image.multiboot else 'cartridge'
+
+        def brepr(s: bytes):
+            return repr(s)[1:]
+
         lines = [
             f'GBA {kind}: {facts.size} bytes at {base:#010x}',
-            f'Title={facts.title!r}, game={facts.game_code!r}, maker={facts.maker!r}',
-            f'Unit={facts.unit:#x}, device={facts.device:#x}, version={facts.version}',
-            f'Entry word={facts.entry_word:#010x}, logo valid={facts.logo_valid}, fixed={facts.fixed:#04x}',
-            f'Reserved1={facts.reserved1!r}, reserved2={facts.reserved2!r}',
-            f'Checksum stored={facts.checksum_stored:#04x}, computed={facts.checksum_computed:#04x}',
-            'Save SDK clues (advisory only): ' + (', '.join(facts.save_markers) or 'none'),
+            f'Title: {brepr(facts.title.strip(b"\0"))!s}',
+            f'Game: {brepr(facts.game_code.rstrip(b"\0"))!s}',
+            f'Maker: {brepr(facts.maker)!s}',
         ]
-        lines += ['Warning: ' + warning for warning in facts.warnings]
+
+        if facts.unit:
+            lins.append(f'Unit: {facts.unit:#x}')
+
+        if facts.device:
+            lines.append(f'Device: {facts.device:#x}')
+
+        if facts.version:
+            lines.append(f'Version: {facts.version}')
+
+        if facts.reserved1.strip(b'\0') or facts.reserved2.strip(b'\0'):
+            lines.append(f'Non-null reserved bytes: {brepr(facts.reserved1)} + {brepr(facts.reserved2)}')
+
+        if facts.save_markers:
+            lines.append('Save SDK clues (advisory only): ' + (', '.join(facts.save_markers) or 'none'))
+
+        lines += [f'Warning: {warning}' for warning in facts.warnings]
+
         if isinstance(recovery, StartupRecoveryFailure):
-            lines.append('Startup recovery not applied: ' + recovery.reason)
+            lines.append(f'Startup recovery not applied: {recovery.reason}')
         else:
-            lines.append(f'Stock devkitARM startup at {recovery.start:#010x}')
+            lines.append(f'Stock devkitARM startup found at {recovery.start:#010x}!')
             lines.extend(
                 f'{copy.name}: {copy.source:#010x} -> {copy.destination:#010x}, {copy.size:#x} bytes'
                 for copy in recovery.copies
