@@ -18,13 +18,14 @@ from ida_domain.base import IdaDomainError
 
 from idagba.crt0 import recover_startup
 from idagba.errors import LoadError, require
+from idagba.hardware import BASE_EWRAM, BASE_ROM0, SIZE_EWRAM, SIZE_ROM0
 from idagba.loader.analysis import schedule_post_analysis
 from idagba.loader.annotate import Annotator
 from idagba.loader.memory_map import map_image
 from idagba.loader.startup import apply_recovery, seed_analysis
 from idagba.logging import error
 from idagba.recognition import FORMAT, MB_FORMAT, RELAXED_FORMAT, recognize
-from idagba.rom import BASE, HEADER_SIZE, MAX_SIZE, MB_BASE, MB_MAX, HeaderFacts, Image, header_facts
+from idagba.rom import HEADER_SIZE, HeaderFacts, Image, header_facts
 
 if TYPE_CHECKING:
     from ida_idaapi import loader_input_t
@@ -40,7 +41,7 @@ def load_file(li: loader_input_t, neflags: int, format_name: str) -> int:
         multiboot = format_name == MB_FORMAT
         size = li.size()
         require(
-            HEADER_SIZE <= size <= (MB_MAX if multiboot else MAX_SIZE),
+            HEADER_SIZE <= size <= (SIZE_EWRAM if multiboot else SIZE_ROM0),
             'Image size must be 192 bytes through 32 MiB (256 KiB for multiboot)',
         )
         li.seek(0)
@@ -48,7 +49,7 @@ def load_file(li: loader_input_t, neflags: int, format_name: str) -> int:
         require(len(rom) == size, 'Short cartridge read')
         expected = recognize(rom, size, 'input.mb' if multiboot else 'input.gba')
         require(expected == format_name, 'Header does not match the selected recognition path')
-        image = Image(rom, MB_BASE if multiboot else BASE)
+        image = Image(rom, BASE_EWRAM if multiboot else BASE_ROM0)
         facts = header_facts(image)
         require(ida_idp.set_processor_type('ARM:ARM7TDMI', ida_idp.SETPROC_LOADER), 'Cannot select ARM7TDMI processor')
         # Thumb-1 compilers also use BL for long intra-function jumps.

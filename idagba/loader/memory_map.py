@@ -1,20 +1,15 @@
-"""GBA address space: segments, static ROM views and file mapping.
-
-ROM wait-state views are static: IDB patches are not synchronized. The EEPROM
-window is mapped at 0x0D000000 for carts up to 16 MiB, otherwise at 0x0DFFFF00
-when the ROM leaves room.
-"""
+"""The GBA memory map as IDA segments, with the image file mapped into it."""
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING
 
 import ida_loader
 from ida_domain.segments import AddressingMode, AddSegmentFlags, PredefinedClass, SegmentPermissions
 
+from idagba import hardware as hw
 from idagba.errors import LoadError, require
-from idagba.rom import BASE, EWRAM, IWRAM, MB_BASE
 
 if TYPE_CHECKING:
     from ida_domain import Database
@@ -25,14 +20,47 @@ if TYPE_CHECKING:
 
 @dataclass(frozen=True, slots=True)
 class MemoryRegion:
-    """Flat memory region with a half-open [start, end) address range."""
+    """One memory region, created as an IDA segment."""
 
     name: str
     start: int
-    end: int
+    size: int
     permissions: SegmentPermissions
     segment_class: PredefinedClass
     comment: str | None = None
+
+    @property
+    def end(self) -> int:
+        return self.start + self.size
+
+
+RX = SegmentPermissions.READ | SegmentPermissions.EXEC
+RW = SegmentPermissions.READ | SegmentPermissions.WRITE
+RWX = RW | SegmentPermissions.EXEC
+CODE = PredefinedClass.CODE
+DATA = PredefinedClass.DATA
+
+# The regions every image has.
+REGIONS = (
+    MemoryRegion('BIOS', hw.BASE_BIOS, hw.SIZE_BIOS, RX, CODE),
+    MemoryRegion('EWRAM', hw.BASE_EWRAM, hw.SIZE_EWRAM, RWX, DATA),
+    MemoryRegion('IWRAM', hw.BASE_IWRAM, hw.SIZE_IWRAM, RWX, DATA),
+    MemoryRegion('IWRAM_BIOS_MIRROR', hw.BASE_IO - 0x100, 0x100, RW, DATA, 'Static copy of the end of IWRAM.'),
+    # 0x804 instead of 0x400 so the segment includes REG_MEMCNT at 0x800.
+    MemoryRegion('IO', hw.BASE_IO, 0x804, RW, DATA),
+    MemoryRegion('PALETTE', hw.BASE_PALETTE_RAM, hw.SIZE_PALETTE_RAM, RW, DATA),
+    MemoryRegion('VRAM', hw.BASE_VRAM, hw.SIZE_VRAM, RW, DATA),
+    MemoryRegion('OAM', hw.BASE_OAM, hw.SIZE_OAM, RW, DATA),
+)
+SAVE = MemoryRegion(
+    'SAVE', hw.BASE_SRAM, 0x10000, RW, DATA, 'SRAM or Flash, if the cart has one. The chip is not detected.'
+)
+# A cartridge up to 16 MiB shows its EEPROM in this whole region, a larger one only in the last 0x100 bytes:
+# https://mgba-emu.github.io/gbatek/#gbacartbackupeeprom
+EEPROM = MemoryRegion(
+    'EEPROM', hw.BASE_ROM2_EX, hw.BASE_SRAM - hw.BASE_ROM2_EX, RW, DATA, 'Serial EEPROM port, if the cart has one.'
+)
+EEPROM_LARGE_ROM = replace(EEPROM, start=hw.BASE_SRAM - 0x100, size=0x100)
 
 
 def map_image(db: Database, li: loader_input_t, image: Image) -> None:
@@ -41,7 +69,7 @@ def map_image(db: Database, li: loader_input_t, image: Image) -> None:
 
     size = len(image.rom)
     for view, _ in image.views:
-        # Only the image's own address is patchable; the wait-state views are static copies of the file.
+        # Patches apply at the load address only; the other views are static copies.
         patchable = ida_loader.FILEREG_PATCHABLE if view == image.base else 0
         require(
             li.file2base(0, view, view + size, patchable),  # ty: ignore[invalid-argument-type]
@@ -50,60 +78,20 @@ def map_image(db: Database, li: loader_input_t, image: Image) -> None:
 
 
 def _regions(image: Image) -> list[MemoryRegion]:
-    size = len(image.rom)
-    rx = SegmentPermissions.READ | SegmentPermissions.EXEC
-    rw = SegmentPermissions.READ | SegmentPermissions.WRITE
-    code, data = PredefinedClass.CODE, PredefinedClass.DATA
-    multiboot = f'Multiboot image occupies {MB_BASE:#010x}..{MB_BASE + size:#010x}; no cartridge ROM is mapped.'
-    regions = [
-        MemoryRegion('BIOS', 0, 0x4000, rx, code),
-        MemoryRegion('EWRAM', *EWRAM, rw | SegmentPermissions.EXEC, data, multiboot if image.multiboot else None),
-        MemoryRegion('IWRAM', *IWRAM, rw | SegmentPermissions.EXEC, data),
-        # A static copy of the top of IWRAM, not an emulated mirror.
-        MemoryRegion(
-            'IWRAM_BIOS_MIRROR',
-            0x03FFFF00,
-            0x04000000,
-            rw,
-            data,
-            'Static mirror of IWRAM 0x03007F00..0x03008000; IDB patches are not synchronized.',
-        ),
-        MemoryRegion('IO', 0x04000000, 0x04000804, rw, data),
-        MemoryRegion('PALETTE', 0x05000000, 0x05000400, rw, data),
-        MemoryRegion('VRAM', 0x06000000, 0x06018000, rw, data),
-        MemoryRegion('OAM', 0x07000000, 0x07000400, rw, data),
-    ]
+    regions = [*REGIONS]
     if not image.multiboot:
-        static = f'Static view of ROM at {BASE:#010x}; IDB patches are not synchronized between views.'
+        size = len(image.rom)
+        note = f'Static copy of ROM at {hw.BASE_ROM0:#010x}.'
         regions += (
-            MemoryRegion('ROM' + suffix, view, view + size, rx, code, static if suffix else None)
-            for view, suffix in image.views
+            MemoryRegion('ROM' + suffix, view, size, RX, CODE, note if suffix else None) for view, suffix in image.views
         )
-        # GBATEK: EEPROM answers anywhere above 0x0D000000 on carts up to 16 MiB, else at 0x0DFFFF00.
-        eeprom = 0x0D000000 if size <= 0x01000000 else 0x0DFFFF00
-        if 0x0C000000 + size <= eeprom:
-            regions.append(
-                MemoryRegion(
-                    'EEPROM',
-                    eeprom,
-                    0x0E000000,
-                    rw,
-                    data,
-                    'Serial EEPROM window, if the cart has one: bit 0 carries data and transfers '
-                    'use DMA3 in 64-bit units. Not linear memory.',
-                )
-            )
+        # The EEPROM gets the first of its two places that the last ROM view leaves free.
+        for eeprom in (EEPROM, EEPROM_LARGE_ROM):
+            if hw.BASE_ROM2 + size <= eeprom.start:
+                regions.append(eeprom)
+                break
 
-    regions.append(
-        MemoryRegion(
-            'SAVE',
-            0x0E000000,
-            0x0E010000,
-            rw,
-            data,
-            'Unknown SRAM/Flash bus window, not a detected chip size; serial EEPROM is not mapped here.',
-        )
-    )
+    regions.append(SAVE)
     return regions
 
 
@@ -114,22 +102,31 @@ def _create(db: Database, region: MemoryRegion) -> None:
         msg = f'Cannot create segment {region.name}'
         raise LoadError(msg)
 
-    # Changing addressing re-plans the whole segment for analysis, which would analyze the NOAA ROM views.
+    # Setting the addressing mode makes IDA analyze the segment, so skip it when it is already 32-bit.
     if db.segments.get_bitness(segment) != 32:
         db.segments.set_addressing_mode(segment, AddressingMode.BIT32)
 
+    # set_permissions only changes the object; update() saves it.
     db.segments.set_permissions(segment, region.permissions)
-    # ida_domain assigns perm on the kernel object without committing it; the SDK requires update() after that.
     segment.update()
-    actual = db.segments.get_at(region.start)
-    require(
-        actual is not None
-        and actual.start_ea == region.start
-        and actual.end_ea == region.end
-        and actual.perm == region.permissions
-        and db.segments.get_class(actual) == region.segment_class.value
-        and db.segments.get_bitness(actual) == 32,
-        f'Segment {region.name} does not have the required extent, permissions, class, or bitness',
-    )
     if region.comment:
         db.segments.set_comment(segment, region.comment, repeatable=True)
+
+    _check(db, region)
+
+
+def _check(db: Database, region: MemoryRegion) -> None:
+    """Raise unless the database holds the segment exactly as the region describes it."""
+    segment = db.segments.get_at(region.start)
+    require(
+        segment is not None
+        and segment.start_ea == region.start
+        and segment.end_ea == region.end
+        and segment.perm == region.permissions
+        and db.segments.get_class(segment) == region.segment_class.value
+        and db.segments.get_bitness(segment) == 32,
+        f'Segment {region.name} does not have the required extent, permissions, class, or bitness',
+    )
+
+
+__all__ = ['MemoryRegion', 'map_image']

@@ -20,7 +20,8 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, ClassVar
 
 from idagba.errors import LoadError, require
-from idagba.rom import BASE, EWRAM, HEADER_SIZE, IWRAM, arm_branch_target
+from idagba.hardware import BASE_EWRAM, BASE_IWRAM, BASE_ROM0, SIZE_EWRAM, SIZE_IWRAM
+from idagba.rom import HEADER_SIZE, arm_branch_target
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -67,7 +68,7 @@ class StartupRecoveryFailure:
     reason: str
 
 
-def recover_startup(rom: bytes, base: int = BASE) -> StartupRecovery | StartupRecoveryFailure:
+def recover_startup(rom: bytes, base: int = BASE_ROM0) -> StartupRecovery | StartupRecoveryFailure:
     """Recover the startup of an image loaded at base, or say why that is not possible."""
     crt0 = find_crt0(rom)
     if isinstance(crt0, StartupRecoveryFailure):
@@ -283,6 +284,8 @@ def _check_copies(
     copies: Sequence[StartupCopy], image: tuple[int, int], reserved: Sequence[tuple[int, int]]
 ) -> list[tuple[int, int]]:
     """Source range of every copy, once each reads unexplained image bytes and writes RAM of its own."""
+    ewram = (BASE_EWRAM, BASE_EWRAM + SIZE_EWRAM)
+    iwram = (BASE_IWRAM, BASE_IWRAM + SIZE_IWRAM)
     sources, destinations = [], []
     for copy in copies:
         source = (copy.source, copy.source + copy.size)
@@ -290,7 +293,7 @@ def _check_copies(
         require(copy.source % 4 == copy.destination % 4 == 0, f'{copy.name}: unaligned copy')
         require(_within(source, image), f'{copy.name}: source leaves input')
         require(
-            _within(destination, EWRAM) or _within(destination, IWRAM),
+            _within(destination, ewram) or _within(destination, iwram),
             f'{copy.name}: destination leaves canonical RAM',
         )
         # A multiboot image is itself loaded into EWRAM.
@@ -316,15 +319,15 @@ def _notes(pool: LiteralPool, start: int) -> list[Note]:
     ldr_sp_irq, ldr_sp_usr = 0x10, 0x1C
     notes = []
     for mode, top, load in (('IRQ', pool.sp_irq, ldr_sp_irq), ('system', pool.sp_usr, ldr_sp_usr)):
-        if top % 4 == 0 and IWRAM[0] <= top <= IWRAM[1]:
+        if top % 4 == 0 and BASE_IWRAM <= top <= BASE_IWRAM + SIZE_IWRAM:
             notes.append(Note(f'Stock crt0 {mode} stack hint: SP={top:#010x}', start + load))
 
     # The startup zero-fills both ranges at run time, so the image holds no bytes for them.
-    for name, lo, hi, region in (
-        ('BSS', pool.bss_start, pool.bss_end, IWRAM),
-        ('SBSS', pool.sbss_start, pool.sbss_end, EWRAM),
+    for name, lo, hi, base, size in (
+        ('BSS', pool.bss_start, pool.bss_end, BASE_IWRAM, SIZE_IWRAM),
+        ('SBSS', pool.sbss_start, pool.sbss_end, BASE_EWRAM, SIZE_EWRAM),
     ):
-        if lo % 4 == hi % 4 == 0 and region[0] <= lo <= hi <= region[1]:
+        if lo % 4 == hi % 4 == 0 and base <= lo <= hi <= base + size:
             text = f'{name} cleared at runtime: [{lo:#010x}, {hi:#010x}); bytes remain unknown in static IDB'
             notes.append(Note(text, lo if lo < hi else None))
 

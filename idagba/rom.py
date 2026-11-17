@@ -1,4 +1,4 @@
-"""The GBA image address constants, the loaded image and its cartridge header facts."""
+"""The loaded image and its cartridge header facts."""
 
 from __future__ import annotations
 
@@ -6,13 +6,9 @@ import re
 import struct
 from dataclasses import dataclass, field
 
-BASE = 0x08000000
-MAX_SIZE = 0x02000000
-MB_BASE = 0x02000000
-MB_MAX = 0x40000
+from idagba.hardware import BASE_EWRAM, BASE_ROM0, BASE_ROM1, BASE_ROM2
+
 HEADER_SIZE = 0xC0
-EWRAM = (0x02000000, 0x02040000)
-IWRAM = (0x03000000, 0x03008000)
 
 
 @dataclass(frozen=True, slots=True)
@@ -20,11 +16,11 @@ class Image:
     """A complete image and its load address; the base alone tells a cartridge from a multiboot image."""
 
     rom: bytes = field(repr=False)
-    base: int = BASE
+    base: int = BASE_ROM0
 
     @property
     def multiboot(self) -> bool:
-        return self.base == MB_BASE
+        return self.base == BASE_EWRAM
 
     @property
     def end(self) -> int:
@@ -46,7 +42,7 @@ class Image:
             return ((self.base, ''),)
 
         # GBATEK: the cartridge answers at three addresses that differ only in bus wait state.
-        return ((BASE, ''), (0x0A000000, '_WS1'), (0x0C000000, '_WS2'))
+        return ((BASE_ROM0, ''), (BASE_ROM1, '_WS1'), (BASE_ROM2, '_WS2'))
 
 
 @dataclass(frozen=True, slots=True)
@@ -116,7 +112,7 @@ def header_facts(image: Image) -> HeaderFacts:
     )
 
 
-def entry_target(image: bytes | bytearray, size: int, base: int = BASE, at: int = 0) -> int | None:
+def entry_target(image: bytes | bytearray, size: int, base: int = BASE_ROM0, at: int = 0) -> int | None:
     target = arm_branch_target(struct.unpack_from('<I', image, at)[0], base + at)
     return target if target is not None and base + HEADER_SIZE <= target <= base + size - 4 else None
 

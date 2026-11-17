@@ -13,7 +13,8 @@ import struct
 from typing import Protocol
 
 from idagba.crt0 import Crt0, find_crt0
-from idagba.rom import BASE, HEADER_SIZE, MAX_SIZE, MB_BASE, MB_MAX, entry_target, logo_matches
+from idagba.hardware import BASE_EWRAM, BASE_ROM0, SIZE_EWRAM, SIZE_ROM0
+from idagba.rom import HEADER_SIZE, entry_target, logo_matches
 
 FORMAT = 'Nintendo Game Boy Advance ROM (ARM7TDMI)'
 RELAXED_FORMAT = 'Nintendo Game Boy Advance ROM (homebrew or damaged header)'
@@ -35,7 +36,7 @@ def accept_file(li: LoaderInput, filename: str) -> dict[str, str | int] | int:
     try:
         li.seek(0)
         size = li.size()
-        fmt = recognize(li.read(min(size, MB_MAX)), size, filename)
+        fmt = recognize(li.read(min(size, SIZE_EWRAM)), size, filename)
         # 1 accepts the file; 0x8000 is IDA's ACCEPT_FIRST, which lists the format first.
         return (
             {'format': fmt, 'processor': 'ARM:ARM7TDMI', 'options': 1 if fmt == RELAXED_FORMAT else 0x8001}
@@ -48,7 +49,7 @@ def accept_file(li: LoaderInput, filename: str) -> dict[str, str | int] | int:
 
 def recognize(data: bytes | bytearray, size: int, filename: str) -> str | None:
     """Classify a header; multiboot detection needs the whole image in data."""
-    if not HEADER_SIZE <= size <= MAX_SIZE or len(data) < HEADER_SIZE:
+    if not HEADER_SIZE <= size <= SIZE_ROM0 or len(data) < HEADER_SIZE:
         return None
 
     # mGBA's rule: a missing fixed byte is tolerated only on an unfixed (all-zero logo) header.
@@ -57,9 +58,10 @@ def recognize(data: bytes | bytearray, size: int, filename: str) -> str | None:
 
     name = str(filename).lower()
     logo = logo_matches(data)
-    if 0xC4 <= size <= MB_MAX and len(data) >= size and (name.endswith('.mb') or looks_multiboot(bytes(data[:size]))):
+    fits_ewram = 0xC4 <= size <= SIZE_EWRAM and len(data) >= size
+    if fits_ewram and (name.endswith('.mb') or looks_multiboot(bytes(data[:size]))):
         named = name.endswith(('.mb', '.gba', '.agb'))
-        valid = logo or (named and entry_target(data, size, MB_BASE, HEADER_SIZE) is not None)
+        valid = logo or (named and entry_target(data, size, BASE_EWRAM, HEADER_SIZE) is not None)
         return MB_FORMAT if valid else None
 
     if logo:
@@ -75,7 +77,7 @@ def looks_multiboot(image: bytes) -> bool:
     crt0 = find_crt0(image)
     if isinstance(crt0, Crt0):
         pool = crt0.pool()
-        return pool is not None and pool.text_start == MB_BASE
+        return pool is not None and pool.text_start == BASE_EWRAM
 
     return _literal_vote(image)
 
@@ -100,7 +102,7 @@ def _literal_vote(image: bytes) -> bool:
 
         # A candidate counts when it is an address in the first 128 KiB of a region.
         for value in candidates:
-            ewram += value & ~0x1FFFF == MB_BASE
-            cartridge += value & ~0x1FFFF == BASE
+            ewram += value & ~0x1FFFF == BASE_EWRAM
+            cartridge += value & ~0x1FFFF == BASE_ROM0
 
     return ewram > 0 and cartridge < 2

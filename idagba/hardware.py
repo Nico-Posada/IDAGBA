@@ -1,8 +1,34 @@
-"""GBA hardware register, header and BIOS workspace annotation tables."""
+"""GBA memory map constants and the register, header and BIOS workspace annotation tables."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
+
+# Memory map taken from
+# https://github.com/mgba-emu/mgba/blob/190a68d/include/mgba/internal/gba/memory.h#L41-L78
+BASE_BIOS = 0x00000000
+BASE_EWRAM = 0x02000000
+BASE_IWRAM = 0x03000000
+BASE_IO = 0x04000000
+BASE_PALETTE_RAM = 0x05000000
+BASE_VRAM = 0x06000000
+BASE_OAM = 0x07000000
+BASE_ROM0 = 0x08000000
+BASE_ROM1 = 0x0A000000
+BASE_ROM2 = 0x0C000000
+BASE_ROM2_EX = 0x0D000000
+BASE_SRAM = 0x0E000000
+
+SIZE_BIOS = 0x00004000
+SIZE_EWRAM = 0x00040000
+SIZE_IWRAM = 0x00008000
+SIZE_PALETTE_RAM = 0x00000400
+SIZE_VRAM = 0x00018000
+SIZE_OAM = 0x00000400
+SIZE_ROM0 = 0x02000000
+
+# Last mirror of IWRAM, right below the I/O registers.
+BASE_IWRAM_MIRROR = BASE_IO - SIZE_IWRAM
 
 
 @dataclass(frozen=True, slots=True)
@@ -39,7 +65,7 @@ HEADER_FIELDS = (
     HardwareAnnotation(0xBE, 2, 1, 'GBA_HDR_RESERVED2'),
 )
 
-# Offsets from the start of IWRAM, taken from https://mgba-emu.github.io/gbatek/#biosramusage
+# Offsets from BASE_IWRAM, taken from https://mgba-emu.github.io/gbatek/#biosramusage
 WORKSPACE = (
     HardwareAnnotation(0x7FF0, 4, 4, 'GBA_SOUND_BUFFER', 'unsigned int value;'),
     HardwareAnnotation(0x7FF8, 2, 2, 'GBA_IRQ_FLAGS', 'unsigned short value;'),
@@ -54,7 +80,7 @@ WORKSPACE = (
     ),
 )
 
-# Offsets from 0x04000000, taken from https://mgba-emu.github.io/gbatek/#gbaiomap
+# Offsets from BASE_IO, taken from https://mgba-emu.github.io/gbatek/#gbaiomap
 # fmt: off
 REGISTERS = (
     # LCD / graphics

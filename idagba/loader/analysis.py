@@ -23,6 +23,7 @@ from idagba import arm
 from idagba.bios import BIOS_CALL_NAMES
 from idagba.crt0 import StartupCopy, StartupRecovery, StartupRecoveryFailure, code_pointer
 from idagba.errors import LoadError, require
+from idagba.hardware import BASE_IWRAM, BASE_IWRAM_MIRROR
 from idagba.logging import log, warn
 from idagba.rom import HEADER_SIZE
 
@@ -195,8 +196,8 @@ class PostAnalysis(DatabaseHooks):
         """Constant ARM handlers stored to the BIOS IRQ vector near a load of its address."""
         db = self.db
         count = 0
-        # The BIOS IRQ handler pointer and its mirror.
-        for vector in (0x03007FFC, 0x03FFFFFC):
+        # The BIOS IRQ handler pointer, at its own address and through the IWRAM mirror.
+        for vector in (BASE_IWRAM + 0x7FFC, BASE_IWRAM_MIRROR + 0x7FFC):
             for load in self._vector_loads(vector):
                 function = db.functions.get_at(load)
                 if function is None:

@@ -18,7 +18,18 @@ from ida_domain.types import TypeApplyFlags
 
 from idagba.crt0 import StartupRecovery, StartupRecoveryFailure
 from idagba.errors import require
-from idagba.hardware import HEADER_FIELDS, REGISTERS, WORKSPACE
+from idagba.hardware import (
+    BASE_IO,
+    BASE_IWRAM,
+    BASE_IWRAM_MIRROR,
+    BASE_OAM,
+    BASE_PALETTE_RAM,
+    HEADER_FIELDS,
+    REGISTERS,
+    SIZE_OAM,
+    SIZE_PALETTE_RAM,
+    WORKSPACE,
+)
 from idagba.logging import log, warn
 
 if TYPE_CHECKING:
@@ -117,15 +128,15 @@ class Annotator:
             == 0,
             'Cannot define GBA palette/OAM types',
         )
-        self.data(0x05000000, 0x400, 2, 'GBA_PALETTE', declaration='struct GBA_PaletteRAM value;')
+        self.data(BASE_PALETTE_RAM, SIZE_PALETTE_RAM, 2, 'GBA_PALETTE', declaration='struct GBA_PaletteRAM value;')
         self.comment(
-            0x05000000,
+            BASE_PALETTE_RAM,
             'BGR555 colors: bits 0..4 red, 5..9 green, 10..14 blue; bit 15 unused. '
             'BG palette entry 0 is the backdrop color; OBJ palette starts at 0x05000200.',
         )
-        self.data(0x07000000, 0x400, 2, 'GBA_OAM', declaration='struct GBA_OAM value;')
+        self.data(BASE_OAM, SIZE_OAM, 2, 'GBA_OAM', declaration='struct GBA_OAM value;')
         self.comment(
-            0x07000000,
+            BASE_OAM,
             'OBJ attributes 0..2 per entry; the affine halfwords of entries 4n..4n+3 form '
             'matrix n (PA, PB, PC, PD; signed 8.8 fixed point).',
         )
@@ -133,24 +144,24 @@ class Annotator:
     def _io_registers(self) -> None:
         scalar = {1: 'unsigned char', 2: 'unsigned short', 4: 'unsigned int'}
         for register in REGISTERS:
-            ea = 0x04000000 + register.offset
+            ea = BASE_IO + register.offset
             array = f'[{register.count}]' if register.count > 1 else ''
             declaration = f'volatile {scalar[register.width]} value{array};'
             self.data(ea, register.width * register.count, register.width, register.name, declaration=declaration)
             self.comment(ea, register.access_description)
 
     def _bios_workspace(self) -> None:
-        for workspace_base, suffix in ((0x03000000, ''), (0x03FF8000, '_MIRROR')):
+        for workspace_base, suffix in ((BASE_IWRAM, ''), (BASE_IWRAM_MIRROR, '_MIRROR')):
             for annotation in WORKSPACE:
                 self.apply(annotation, workspace_base, suffix)
 
-        for address, text in (
-            (0x03007F00, 'BIOS default IRQ stack area, 160 bytes (SP_irq starts at 0x03007FA0)'),
-            (0x03007FA0, 'BIOS default supervisor stack area, 64 bytes (SP_svc starts at 0x03007FE0)'),
-            (0x03007FE0, 'BIOS reserved area, 16 bytes'),
-            (0x03007FF4, 'BIOS reserved area, 4 bytes'),
+        for offset, text in (
+            (0x7F00, 'BIOS default IRQ stack area, 160 bytes (SP_irq starts at 0x03007FA0)'),
+            (0x7FA0, 'BIOS default supervisor stack area, 64 bytes (SP_svc starts at 0x03007FE0)'),
+            (0x7FE0, 'BIOS reserved area, 16 bytes'),
+            (0x7FF4, 'BIOS reserved area, 4 bytes'),
         ):
-            self.comment(address, text)
+            self.comment(BASE_IWRAM + offset, text)
 
     def report(self, facts: HeaderFacts, recovery: StartupRecovery | StartupRecoveryFailure) -> None:
         base = self.image.base
