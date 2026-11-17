@@ -38,6 +38,7 @@ class AddressComment:
 class StartupRecovery:
     base: int
     start: int
+    clear_mem: int
     copies: tuple[StartupCopy, ...]
     constructors: int
     main: int
@@ -73,6 +74,14 @@ F000 F80F 2000 2100 4B22 F000 F80A DF00
 C201 3B04 D1FB 4770
 """),
 )
+_SOFT_RESET = _CRT_THUMB.index(0xDF00)
+# devkitarm-crtls before 333d62c (2020-12-10) has no SoftReset SWI after the call to main:
+# every helper sits one halfword closer to its callers and a nop aligns the literal pool.
+_CRT_THUMB_NO_RESET = (
+    *(halfword - 1 if halfword & 0xF800 == 0xF800 else halfword for halfword in _CRT_THUMB[:_SOFT_RESET]),
+    *_CRT_THUMB[_SOFT_RESET + 1 :],
+    0x46C0,
+)
 
 
 def _overlaps(a: tuple[int, int], b: tuple[int, int]) -> bool:
@@ -102,6 +111,15 @@ def code_pointer(
     return any(copy.destination <= address and address + width <= copy.destination + copy.size for copy in copies)
 
 
+def _match_thumb(rom: bytes, offset: int, template: tuple[int, ...]) -> bool:
+    for i, reference in enumerate(template):
+        mask = 0xFF00 if reference & 0xF800 == 0x4800 else 0xFFFF
+        if struct.unpack_from('<H', rom, offset + i * 2)[0] & mask != reference & mask:
+            return False
+
+    return True
+
+
 def _match_crt(rom: bytes, offset: int) -> bool:
     if offset < 0xC0 or offset % 4 or offset + 0xD0 > len(rom):
         return False
@@ -111,12 +129,7 @@ def _match_crt(rom: bytes, offset: int) -> bool:
         if struct.unpack_from('<I', rom, offset + i * 4)[0] & mask != reference & mask:
             return False
 
-    for i, reference in enumerate(_CRT_THUMB):
-        mask = 0xFF00 if reference & 0xF800 == 0x4800 else 0xFFFF
-        if struct.unpack_from('<H', rom, offset + 0x28 + i * 2)[0] & mask != reference & mask:
-            return False
-
-    return True
+    return any(_match_thumb(rom, offset + 0x28, template) for template in (_CRT_THUMB, _CRT_THUMB_NO_RESET))
 
 
 _CRT_LITERALS = (
@@ -168,6 +181,9 @@ def recover_startup(rom: bytes, base: int = BASE) -> StartupRecovery | StartupRe
 
     offset, branches = found
     start = base + offset
+    # ClearMem and the helpers behind it follow the SoftReset SWI in the revisions that have one.
+    swi = 0x28 + 2 * _SOFT_RESET
+    clear_mem = start + swi + (2 if struct.unpack_from('<H', rom, offset + swi)[0] == 0xDF00 else 0)
     image = (base, base + len(rom))
     protected = [(base + b, base + b + 4) for b in branches] + [(base, base + 0xC0), (start, start + 0xD0)]
     try:
@@ -250,6 +266,7 @@ def recover_startup(rom: bytes, base: int = BASE) -> StartupRecovery | StartupRe
     return StartupRecovery(
         base=base,
         start=start,
+        clear_mem=clear_mem,
         copies=tuple(copies),
         constructors=values[0x96],
         main=values[0xA0],

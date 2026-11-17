@@ -54,19 +54,20 @@ def seed_analysis(db: Database, rom: bytes, recovery: StartupRecovery | StartupR
     start = recovery.start
     set_thumb(start, 0)
     set_thumb(start + 0x28, 1)
-    for delta, routine in ((0xA8, 'GBA_ClearMem'), (0xBA, 'GBA_BxR3'), (0xBC, 'GBA_CopyMemChk')):
-        address = start + delta
+    helpers = recovery.clear_mem
+    for delta, routine in ((0, 'GBA_ClearMem'), (0x12, 'GBA_BxR3'), (0x14, 'GBA_CopyMemChk')):
+        address = helpers + delta
         set_thumb(address, 1)
         name(db, address, routine)
-        if delta == 0xBC:
+        if delta == 0x14:
             require(db.instructions.create(address) == 2, 'Cannot decode CopyMemChk')
             require(
-                ida_funcs.add_func(address, start + 0xD0),
+                ida_funcs.add_func(address, helpers + 0x28),
                 'Cannot establish CopyMemChk with its CopyMem interior entry',
             )
         db.auto_analysis.schedule_function(address)
 
-    name(db, start + 0xBE, 'GBA_CopyMem')
+    name(db, helpers + 0x16, 'GBA_CopyMem')
     for pointer, routine, callsite in (
         (recovery.constructors, '__libc_init_array', 0x98),
         (recovery.main, 'main', 0xA2),

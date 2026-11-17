@@ -37,6 +37,18 @@ THUMB_TEMPLATE: tuple[int, ...] = struct.unpack(
 C201 3B04 D1FB 4770
 """),
 )
+# The same listing before devkitarm-crtls 333d62c added the SoftReset SWI, as shipped in pre-2021 ROMs.
+THUMB_TEMPLATE_NO_RESET: tuple[int, ...] = struct.unpack(
+    '>84H',
+    bytes.fromhex("""
+482B 0140 D20B 4678 0140 D30D 2202 0612 4B28 1A9B 1C16 0091 F000 F83C 4730 2140
+0309 01C8 F000 F82B 4823 4924 1A09 F000 F826 4823 4923 1A09 F000 F821 4922 4A23
+4C23 F000 F826 4923 4A23 4C24 F000 F821 4A23 4924 1A53 D002 4A23 F000 F81B 4923
+4A23 4C24 F000 F815 4923 4824 6008 4B24 F000 F80E 2000 2100 4B22 F000 F809 2203
+1889 4391 D003 2200 C004 3904 D1FC 4770 4718 1AA3 2003 181B 4383 D003 C901 C201
+3B04 D1FB 4770 46C0
+"""),
+)
 LOAD_VALUES = {
     0x10: 0x03007F00, 0x1C: 0x03007E00, 0x28: 0x08000000,
     0x38: 0x02000400, 0x90: 0x03002008, 0x92: 0x02040000,
@@ -71,7 +83,7 @@ def _finish_header(rom: bytearray, entry: int = 0x080000C0) -> None:
     rom[0xBE:0xC0] = b'\0\0'
 
 
-def make_synthetic() -> tuple[bytes, dict[int, int]]:
+def make_synthetic(thumb: tuple[int, ...] = THUMB_TEMPLATE) -> tuple[bytes, dict[int, int]]:
     """Build the shifted crt0 fixture without importing production tables."""
     rom = bytearray(0x1000)
     start = BASE + 0x240
@@ -80,7 +92,7 @@ def make_synthetic() -> tuple[bytes, dict[int, int]]:
     for index, word in enumerate(ARM_TEMPLATE):
         struct.pack_into('<I', rom, 0x240 + index * 4, word)
 
-    for index, halfword in enumerate(THUMB_TEMPLATE):
+    for index, halfword in enumerate(thumb):
         struct.pack_into('<H', rom, 0x268 + index * 2, halfword)
 
     literal_offsets = {}

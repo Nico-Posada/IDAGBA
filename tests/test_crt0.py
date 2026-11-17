@@ -3,7 +3,7 @@ from __future__ import annotations
 import struct
 
 import pytest
-from roms import BASE, LOAD_VALUES, MB_BASE, make_indirect, make_multiboot, make_synthetic
+from roms import BASE, LOAD_VALUES, MB_BASE, THUMB_TEMPLATE_NO_RESET, make_indirect, make_multiboot, make_synthetic
 
 from idagba.crt0 import StartupRecovery, StartupRecoveryFailure, recover_startup
 
@@ -15,6 +15,7 @@ def test_recovers_shifted_crt0():
     assert recovered.start == 0x08000240
     assert recovered.main == 0x08000701
     assert recovered.constructors == 0x08000781
+    assert recovered.clear_mem == 0x080002E8
     copies = {copy.name: copy for copy in recovered.copies}
     expected = {
         'GBA_DATA_LMA': (0x08000800, 0x03000100, 8),
@@ -23,6 +24,14 @@ def test_recovers_shifted_crt0():
         'GBA_EWRAM_LMA': (0x08000860, 0x02000100, 8),
     }
     assert {name: (copy.source, copy.destination, copy.size) for name, copy in copies.items()} == expected
+
+
+def test_recovers_crt0_without_soft_reset():
+    rom, _ = make_synthetic(THUMB_TEMPLATE_NO_RESET)
+    recovered = recover_startup(rom)
+    assert isinstance(recovered, StartupRecovery), recovered
+    assert recovered.main == 0x08000701
+    assert recovered.clear_mem == 0x080002E6
 
 
 def _patched(rom: bytes, literals: dict[int, int], *patches: tuple[int, int]) -> bytes:

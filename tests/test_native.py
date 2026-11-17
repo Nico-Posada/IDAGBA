@@ -36,6 +36,7 @@ from roms import (
     FORMAT,
     MB_BASE,
     REAL_SHA256,
+    THUMB_TEMPLATE_NO_RESET,
     make_indirect,
     make_large,
     make_long_jump,
@@ -393,6 +394,26 @@ def test_synthetic(load: Loader, file_type: str | None):
         db.pseudocode.decompile(0x03000100)
         assert hardware_loop(main), 'Loop no longer polls VCOUNT on each iteration'
         assert ram_write(main, 0x03002000), 'Initialized RAM was incorrectly folded as constant'
+
+
+def test_crt0_without_soft_reset(load: Loader):
+    rom, _ = make_synthetic(THUMB_TEMPLATE_NO_RESET)
+    with load('no_reset', rom) as db:
+        for ea, name in (
+            (0x08000700, 'main'),
+            (0x080002E6, 'GBA_ClearMem'),
+            (0x080002F8, 'GBA_BxR3'),
+            (0x080002FA, 'GBA_CopyMemChk'),
+            (0x080002FC, 'GBA_CopyMem'),
+        ):
+            named(db, ea, name)
+
+        for ea in (0x080002E6, 0x080002F8, 0x080002FA):
+            assert thumb(ea) == 1
+            assert function_start(db, ea) == ea
+
+        assert function_start(db, 0x080002FC) == 0x080002FA
+        assert has_xref(db, 0x080002E2, 0x08000700)
 
 
 def test_palette(load: Loader):
