@@ -1,10 +1,7 @@
-"""Hex-Rays lifter: GBA BIOS SWI/SVC instructions become typed helper calls.
+"""Hex-Rays lifter that turns BIOS calls from inline asm into normal calls.
 
-The idagba plugin installs it on databases created by the idagba loader; it needs the ARM
-decompiler. One microcode filter matches BIOS SVCs and hands each to that call's udc_filter_t
-prototype (never installed itself), which emits a call carrying the GBATEK register arguments
-and results, so the pseudocode shows SWI_CpuFastSet(src, dst, mode) instead of __asm { SVC 0xC }.
-From another script, `from idagba import lifter; lifter.install()` does the same.
+Off: __asm { SVC 0xC }
+On:  SWI_CpuFastSet(src, dst, mode)
 """
 
 from __future__ import annotations
@@ -25,7 +22,7 @@ _lifter: _BiosCalls | None = None
 
 
 def install() -> bool:
-    """Register the BIOS call lifter for the open database; True when the decompiler is available."""
+    """Install the lifter for the open database; False when the decompiler is missing."""
     global _lifter
     if _lifter:
         return True
@@ -61,19 +58,18 @@ class _BiosCalls(MicrocodeLifter):
 
     def apply(self, cdg: codegen_t) -> int:
         number = arm.swi_number(self.db, cdg.insn)
-        if number is None:  # match() admitted only BIOS SVCs
+        if number is None:  # match() already ruled this out
             return ida_hexrays.MERR_INSN
 
         return self.prototypes[number].apply(cdg)
 
 
 class _Prototype(MicrocodeFilter):
-    """One BIOS call's __usercall prototype; only its apply() is used, via _BiosCalls."""
+    """The prototype of one BIOS call."""
 
     def __init__(self, declaration: str) -> None:
         super().__init__()
-        # GBATEK documents clobbers only for Halt, so every prototype without its own list gets
-        # the one libtonc's swi_call declares. The BIOS SWI handler itself saves R11, R12 and R14.
+        # A call that does not list what it clobbers is assumed to clobber R0-R3, as in libtonc.
         if '__spoils' not in declaration:
             declaration = declaration.replace('__usercall', '__usercall __spoils<R0,R1,R2,R3>', 1)
 
@@ -82,5 +78,5 @@ class _Prototype(MicrocodeFilter):
             raise ValueError(msg)
 
     def match(self, cdg: codegen_t) -> bool:
-        # udc_filter_t.apply() re-checks match(); _BiosCalls only dispatches matching SVCs here.
+        # _BiosCalls has already matched the instruction.
         return True
