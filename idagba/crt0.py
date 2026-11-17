@@ -89,6 +89,7 @@ def _recover(crt0: Crt0, base: int) -> StartupRecovery:
     require(pool.text_start == base, 'startup is not linked for this image base')
     image = (base, base + len(crt0.rom))
     start = base + crt0.offset
+
     # Ranges that are already explained: the header, the startup with its pool, and the branches
     # that lead to it. No section may be copied out of them and no code pointer may land in them.
     reserved = [
@@ -97,6 +98,7 @@ def _recover(crt0: Crt0, base: int) -> StartupRecovery:
         *((base + branch, base + branch + 4) for branch in crt0.entry_branches),
     ]
     copies = _copies(pool)
+
     # The source of a copy is data, so it is explained as well.
     reserved += _check_copies(copies, image, reserved)
     for name, pointer in (('__libc_init_array', pool.libc_init_array), ('main', pool.main)):
@@ -163,12 +165,11 @@ class Crt0:
     pool_offset: int
     entry_branches: tuple[int, ...]
 
-    # The assembled startup code and the offset of ClearMem in it, taken from
-    # https://github.com/devkitPro/devkitarm-crtls/blob/333d62c/gba_crt0.s#L58-L253
-    # and from the revision before it, which has no SoftReset after main:
-    # https://github.com/devkitPro/devkitarm-crtls/blob/eac1e8c/gba_crt0.s#L58-L250
+    # The assembled startup code and the offset of ClearMem in it
     REVISIONS: ClassVar[tuple[tuple[bytes, int], ...]] = (
         (
+            # (current)
+            # https://github.com/devkitPro/devkitarm-crtls/blob/333d62c/gba_crt0.s#L58-L253
             bytes.fromhex("""
                 01 03 A0 E3 08 02 80 E5 12 00 A0 E3 00 F0 29 E1
                 B8 D0 9F E5 1F 00 A0 E3 00 F0 29 E1 B0 D0 9F E5
@@ -187,6 +188,8 @@ class Crt0:
             0xA8,
         ),
         (
+            # (no SoftReset after main)
+            # https://github.com/devkitPro/devkitarm-crtls/blob/eac1e8c/gba_crt0.s#L58-L250
             bytes.fromhex("""
                 01 03 A0 E3 08 02 80 E5 12 00 A0 E3 00 F0 29 E1
                 B8 D0 9F E5 1F 00 A0 E3 00 F0 29 E1 B0 D0 9F E5
@@ -260,9 +263,24 @@ def _copies(pool: LiteralPool) -> list[StartupCopy]:
     # Source, destination and length taken from the CopyMemChk and CopyMem calls in
     # https://github.com/devkitPro/devkitarm-crtls/blob/333d62c/gba_crt0.s#L130-L163
     copies = [
-        _copy('GBA_DATA_LMA', pool.data_lma, pool.data_start, pool.data_end - pool.data_start),
-        _copy('GBA_IWRAM_LMA', pool.iwram_lma, pool.iwram_start, pool.iwram_end - pool.iwram_start),
-        _copy('GBA_EWRAM_LMA', pool.ewram_lma, pool.ewram_start, pool.ewram_end - pool.ewram_start),
+        _copy(
+            'GBA_DATA_LMA',
+            pool.data_lma,
+            pool.data_start,
+            pool.data_end - pool.data_start,
+        ),
+        _copy(
+            'GBA_IWRAM_LMA',
+            pool.iwram_lma,
+            pool.iwram_start,
+            pool.iwram_end - pool.iwram_start,
+        ),
+        _copy(
+            'GBA_EWRAM_LMA',
+            pool.ewram_lma,
+            pool.ewram_start,
+            pool.ewram_end - pool.ewram_start,
+        ),
         _copy(
             'GBA_IWRAM0_LMA',
             pool.load_start_iwram0,
@@ -270,12 +288,14 @@ def _copies(pool: LiteralPool) -> list[StartupCopy]:
             pool.load_stop_iwram0 - pool.load_start_iwram0,
         ),
     ]
+
     # A section linked where it is loaded is copied onto itself, as .ewram is in a multiboot image.
     return [copy for copy in copies if copy.size and copy.source != copy.destination]
 
 
 def _copy(name: str, source: int, destination: int, size: int) -> StartupCopy:
     require(size >= 0, f'{name}: section ends before it starts')
+
     # CopyMem rounds the length up to a whole word.
     return StartupCopy(name, source, destination, (size + 3) & ~3)
 
@@ -290,14 +310,26 @@ def _check_copies(
     for copy in copies:
         source = (copy.source, copy.source + copy.size)
         destination = (copy.destination, copy.destination + copy.size)
-        require(copy.source % 4 == copy.destination % 4 == 0, f'{copy.name}: unaligned copy')
-        require(_within(source, image), f'{copy.name}: source leaves input')
+
+        # Some sanity checks
+        require(
+            copy.source % 4 == copy.destination % 4 == 0,
+            f'{copy.name}: unaligned copy',
+        )
+        require(
+            _within(source, image),
+            f'{copy.name}: source leaves input',
+        )
         require(
             _within(destination, ewram) or _within(destination, iwram),
             f'{copy.name}: destination leaves canonical RAM',
         )
-        # A multiboot image is itself loaded into EWRAM.
-        require(not _overlaps(destination, image), f'{copy.name}: destination overlaps the loaded image')
+
+        # A multiboot image is itself loaded into EWRAM
+        require(
+            not _overlaps(destination, image),
+            f'{copy.name}: destination overlaps the loaded image',
+        )
         require(
             not any(_overlaps(source, span) for span in (*reserved, *sources)),
             f'{copy.name}: source overlaps startup, literal, or another source',
@@ -306,6 +338,7 @@ def _check_copies(
             not any(_overlaps(destination, span) for span in destinations),
             f'{copy.name}: overlapping destinations',
         )
+
         sources.append(source)
         destinations.append(destination)
 
