@@ -80,8 +80,8 @@ def looks_multiboot(image: bytes) -> bool:
 
 
 def _literal_vote(image: bytes) -> bool:
-    # ponytail: mGBA's GBAIsMB literal vote without its toolchain-specific branch rules;
-    # a tiny cartridge with EWRAM-heavy startup code can be misdetected.
+    # mGBA's GBAIsMB literal vote, without its toolchain-specific branch rules.
+    # A tiny cartridge with EWRAM-heavy startup code can be misdetected.
     ewram = cartridge = 0
     for ea in range(0xC0, min(len(image) - 3, 0xC0 + 128 * 4), 4):
         word = struct.unpack_from('<I', image, ea)[0]

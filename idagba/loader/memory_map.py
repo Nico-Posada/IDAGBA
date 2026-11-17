@@ -47,7 +47,7 @@ def _regions(image: Image) -> list[MemoryRegion]:
             'EWRAM', 0x02000000, 0x02040000, rw | SegmentPermissions.EXEC, data, multiboot if image.multiboot else None
         ),
         MemoryRegion('IWRAM', 0x03000000, 0x03008000, rw | SegmentPermissions.EXEC, data),
-        # ponytail: explicit static views, not mirror/bank emulation; add validated views only when needed.
+        # A static copy of the top of IWRAM, not an emulated mirror.
         MemoryRegion(
             'IWRAM_BIOS_MIRROR',
             0x03FFFF00,

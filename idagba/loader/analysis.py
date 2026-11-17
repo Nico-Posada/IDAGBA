@@ -62,7 +62,7 @@ class PostAnalysis(DatabaseHooks):
             warn(f'Post-analysis stopped: {exc}')
             found = 0
 
-        # ponytail: bounded re-runs over analyzed code only; raise _MAX_PASSES for deeper chains.
+        # Stop after _MAX_PASSES passes even when they keep finding code.
         if not found or self.passes >= _MAX_PASSES:
             self.unhook()
             _pending = None
@@ -118,7 +118,7 @@ class PostAnalysis(DatabaseHooks):
     def _annotate_swis(self) -> int:
         db = self.db
         count = 0
-        # ponytail: rescans every analyzed instruction per pass; track changed functions if large ROMs stall.
+        # Every pass rescans all analyzed instructions.
         for function_ea in self._function_starts():
             function = db.functions.get_at(function_ea)
             if function is None:
@@ -227,7 +227,7 @@ class PostAnalysis(DatabaseHooks):
                     continue
 
                 ea = load
-                # ponytail: short fixed window after the vector load, not dataflow over the function.
+                # Only the eight instructions after the vector load are checked.
                 for _ in range(8):
                     following = db.heads.get_next(ea)
                     if following is None or following >= function.end_ea:
