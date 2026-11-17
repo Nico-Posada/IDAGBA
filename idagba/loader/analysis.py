@@ -24,7 +24,7 @@ from idagba.bios import BIOS_CALL_NAMES
 from idagba.crt0 import StartupCopy, StartupRecovery, StartupRecoveryFailure, code_pointer
 from idagba.errors import LoadError, require
 from idagba.hardware import IRQ_VECTORS
-from idagba.loader.annotate import log
+from idagba.logging import log, warn
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -57,7 +57,7 @@ class PostAnalysis(DatabaseHooks):
         try:
             found = _post_analysis(self.db, self.rom, self.copies, self.protected, self.base)
         except (LoadError, IdaDomainError) as exc:
-            log(f'Post-analysis stopped: {exc}')
+            warn(f'Post-analysis stopped: {exc}')
             found = 0
         # ponytail: bounded re-runs over analyzed code only; raise _MAX_PASSES for deeper chains.
         if not found or self.passes >= _MAX_PASSES:

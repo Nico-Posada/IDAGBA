@@ -19,9 +19,10 @@ from ida_domain.base import IdaDomainError
 from idagba.crt0 import recover_startup
 from idagba.errors import LoadError, require
 from idagba.loader.analysis import schedule_post_analysis
-from idagba.loader.annotate import annotate_hardware, log, report
+from idagba.loader.annotate import annotate_hardware, report
 from idagba.loader.memory_map import map_image
 from idagba.loader.startup import apply_recovery, seed_analysis
+from idagba.logging import error
 from idagba.recognition import FORMAT, MB_FORMAT, RELAXED_FORMAT, recognize
 from idagba.rom import BASE, MAX_SIZE, MB_BASE, MB_MAX, HeaderFacts, header_facts
 
@@ -58,7 +59,7 @@ def load_file(li: loader_input_t, neflags: int, format_name: str) -> int:
         require(not ida_ida.inf_is_be() and db.bitness == 32, 'Cannot establish 32-bit little-endian addressing')
         _setup_database(db, li, rom, facts, base)
     except (LoadError, IdaDomainError) as exc:
-        log(f'Load failed: {exc}')
+        error(f'Load failed: {exc}')
         return 0
 
     return 1

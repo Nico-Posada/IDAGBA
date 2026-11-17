@@ -12,7 +12,6 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-import ida_kernwin
 from ida_domain.comments import CommentKind
 from ida_domain.names import SetNameFlags
 from ida_domain.types import TypeApplyFlags
@@ -20,14 +19,11 @@ from ida_domain.types import TypeApplyFlags
 from idagba.crt0 import StartupRecovery, StartupRecoveryFailure
 from idagba.errors import require
 from idagba.hardware import HEADER_FIELDS, REGISTERS, WORKSPACE
+from idagba.logging import log, warn
 from idagba.rom import BASE, MB_BASE, HeaderFacts
 
 if TYPE_CHECKING:
     from ida_domain import Database
-
-
-def log(message: str) -> None:
-    ida_kernwin.msg(f'[GBA] {message}\n')
 
 
 def name(db: Database, ea: int, text: str) -> None:
@@ -36,7 +32,7 @@ def name(db: Database, ea: int, text: str) -> None:
         return
 
     if existing and db.bytes.has_user_name_at(ea):
-        log(f'Retaining existing name {existing} at {ea:#x}; requested {text}')
+        warn(f'Retaining existing name {existing} at {ea:#x}; requested {text}')
         return
 
     require(db.names.set_name(ea, text, SetNameFlags.NOWARN), f'Cannot name {ea:#x} {text}')

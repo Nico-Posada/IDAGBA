@@ -6,12 +6,12 @@ from pathlib import Path
 
 import ida_diskio
 import ida_idaapi
-import ida_kernwin
 from ida_domain import Database
 from ida_domain.hooks import DatabaseHooks, UIHooks
 
 from idagba import lifter
 from idagba.install import install_loader_link
+from idagba.logging import error
 from idagba.recognition import FORMAT_MARKER
 
 LOADER_ENTRY = Path(__file__).resolve().parent / 'loaders' / 'idagba_loader.py'
@@ -34,7 +34,7 @@ class IdaGbaPlugmod(ida_idaapi.plugmod_t):
         try:
             install_loader_link(Path(ida_diskio.get_user_idadir()) / 'loaders', LOADER_ENTRY)
         except OSError as exc:
-            ida_kernwin.msg(f'[GBA] Cannot install the loader into $IDAUSR/loaders: {exc}\n')
+            error(f'Cannot install the loader into $IDAUSR/loaders: {exc}')
         self._hooks = (_Opened(), _Closing())
         for hook in self._hooks:
             hook.hook()
