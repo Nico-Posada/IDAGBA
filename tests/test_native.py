@@ -542,10 +542,15 @@ def test_real(load: Loader):
         named(db, 0x080000C0, 'GBA_STARTUP')
         named(db, 0x08000870, 'main')
         named(db, 0x08012B20, '__libc_init_array')
+        # libtonc's memset16, named by the devkitARM signature: a Thumb function, the views left alone.
+        named(db, 0x0801753C, 'memset16')
+        assert function_start(db, 0x0801753C) == 0x0801753C
+        assert not any(0x0A000000 <= f.start_ea < 0x0E000000 for f in db.functions.get_all()), 'ROM views analyzed'
         assert thumb(0x080000E0) == 0
         assert thumb(0x08000108) == 1
         assert thumb(0x08000870) == 1
         assert thumb(0x08012B20) == 1
+        assert thumb(0x0801753C) == 1
         for interior in (0x08000952, 0x080009D6, 0x08000A3C, 0x08000B62):
             assert function_start(db, interior) == 0x08000870, hex(interior)
 

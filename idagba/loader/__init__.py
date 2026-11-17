@@ -1,4 +1,4 @@
-"""IDA-side GBA loader: maps the image, annotates hardware, applies crt0 and seeds analysis.
+"""IDA-side GBA loader: maps the image, annotates hardware, applies crt0, seeds analysis and plans FLIRT signatures.
 
 Thumb BL long-jump recognition is enabled before analysis so internal branches
 do not split functions and turn stack locals into bogus arguments. Existing IDBs
@@ -8,8 +8,10 @@ the option alone does not remove old function definitions.
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import TYPE_CHECKING
 
+import ida_funcs
 import ida_ida
 import ida_idp
 import ida_loader
@@ -23,7 +25,7 @@ from idagba.loader.analysis import schedule_post_analysis
 from idagba.loader.annotate import Annotator
 from idagba.loader.memory_map import map_image
 from idagba.loader.startup import apply_recovery, seed_analysis
-from idagba.logging import error
+from idagba.logging import error, warn
 from idagba.recognition import FORMAT, MB_FORMAT, RELAXED_FORMAT, recognize
 from idagba.rom import HEADER_SIZE, HeaderFacts, Image, header_facts
 
@@ -74,4 +76,12 @@ def _setup_database(annotator: Annotator, li: loader_input_t, facts: HeaderFacts
     apply_recovery(annotator, recovery)
     annotator.report(facts, recovery)
     seed_analysis(annotator, recovery)
+    _plan_signatures()
     schedule_post_analysis(db, image, recovery)
+
+
+def _plan_signatures() -> None:
+    """Queue the runtime-library signatures built by sig/build.py; IDA applies them as analysis runs."""
+    for sig in sorted((Path(__file__).resolve().parents[2] / 'sig').glob('*.sig')):
+        if not ida_funcs.plan_to_apply_idasgn(str(sig)):
+            warn(f'Cannot apply FLIRT signature {sig.name}')

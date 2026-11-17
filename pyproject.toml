@@ -44,6 +44,7 @@ inline-quotes = "single"
 [tool.ruff.lint.per-file-ignores]
 "idagba_plugin.py" = ["INP001", "N802", "ARG002"]
 "loaders/*.py" = ["INP001"]
+"sig/build.py" = ["INP001"]
 "idagba/lifter.py" = ["ARG002", "PLW0603"]
 "idagba/loader/analysis.py" = ["PLW0603"]
 "tests/*.py" = ["INP001", "S101", "ANN"]

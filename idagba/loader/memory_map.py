@@ -55,10 +55,16 @@ REGIONS = (
 SAVE = MemoryRegion(
     'SAVE', hw.BASE_SRAM, 0x10000, RW, DATA, 'SRAM or Flash, if the cart has one. The chip is not detected.'
 )
-# A cartridge up to 16 MiB shows its EEPROM in this whole region, a larger one only in the last 0x100 bytes:
+
+# A cartridge up to 16 MiB shows its EEPROM in this whole region, a larger one only in the last 0x100 bytes
 # https://mgba-emu.github.io/gbatek/#gbacartbackupeeprom
 EEPROM = MemoryRegion(
-    'EEPROM', hw.BASE_ROM2_EX, hw.BASE_SRAM - hw.BASE_ROM2_EX, RW, DATA, 'Serial EEPROM port, if the cart has one.'
+    'EEPROM',
+    hw.BASE_ROM2_EX,
+    hw.BASE_SRAM - hw.BASE_ROM2_EX,
+    RW,
+    DATA,
+    'Serial EEPROM port, if the cart has one.',
 )
 EEPROM_LARGE_ROM = replace(EEPROM, start=hw.BASE_SRAM - 0x100, size=0x100)
 
@@ -82,9 +88,13 @@ def _regions(image: Image) -> list[MemoryRegion]:
     if not image.multiboot:
         size = len(image.rom)
         note = f'Static copy of ROM at {hw.BASE_ROM0:#010x}.'
+
+        # The static copies are DATA so that FLIRT, which scans CODE segments for library code, leaves them alone.
         regions += (
-            MemoryRegion('ROM' + suffix, view, size, RX, CODE, note if suffix else None) for view, suffix in image.views
+            MemoryRegion('ROM' + suffix, view, size, RX, DATA if suffix else CODE, note if suffix else None)
+            for view, suffix in image.views
         )
+
         # The EEPROM gets the first of its two places that the last ROM view leaves free.
         for eeprom in (EEPROM, EEPROM_LARGE_ROM):
             if hw.BASE_ROM2 + size <= eeprom.start:
