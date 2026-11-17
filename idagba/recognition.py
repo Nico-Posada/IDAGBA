@@ -12,7 +12,7 @@ from __future__ import annotations
 import struct
 from typing import Protocol
 
-from idagba.crt0 import StartupRecoveryFailure, crt_literal, find_crt
+from idagba.crt0 import TEXT_START, StartupRecoveryFailure, find_crt
 from idagba.rom import BASE, MAX_SIZE, MB_BASE, MB_MAX, entry_target, logo_matches
 
 FORMAT = 'Nintendo Game Boy Advance ROM (ARM7TDMI)'
@@ -73,9 +73,13 @@ def accept_file(li: LoaderInput, filename: str) -> dict[str, str | int] | int:
 def looks_multiboot(image: bytes) -> bool:
     found = find_crt(image)
     if not isinstance(found, StartupRecoveryFailure):
-        literal = crt_literal(image, found[0], 0x28)
+        literal = found.literal_offset(TEXT_START)
         return literal + 4 <= len(image) and struct.unpack_from('<I', image, literal)[0] == MB_BASE
 
+    return _literal_vote(image)
+
+
+def _literal_vote(image: bytes) -> bool:
     # ponytail: mGBA's GBAIsMB literal vote without its toolchain-specific branch rules;
     # a tiny cartridge with EWRAM-heavy startup code can be misdetected.
     ewram = cartridge = 0

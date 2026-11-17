@@ -19,12 +19,12 @@ from ida_domain.base import IdaDomainError
 from idagba.crt0 import recover_startup
 from idagba.errors import LoadError, require
 from idagba.loader.analysis import schedule_post_analysis
-from idagba.loader.annotate import annotate_hardware, report
+from idagba.loader.annotate import Annotator
 from idagba.loader.memory_map import map_image
 from idagba.loader.startup import apply_recovery, seed_analysis
 from idagba.logging import error
 from idagba.recognition import FORMAT, MB_FORMAT, RELAXED_FORMAT, recognize
-from idagba.rom import BASE, MAX_SIZE, MB_BASE, MB_MAX, HeaderFacts, header_facts
+from idagba.rom import BASE, MAX_SIZE, MB_BASE, MB_MAX, HeaderFacts, Image, header_facts
 
 if TYPE_CHECKING:
     from ida_idaapi import loader_input_t
@@ -48,8 +48,8 @@ def load_file(li: loader_input_t, neflags: int, format_name: str) -> int:
         require(len(rom) == size, 'Short cartridge read')
         expected = recognize(rom, size, 'input.mb' if multiboot else 'input.gba')
         require(expected == format_name, 'Header does not match the selected recognition path')
-        base = MB_BASE if multiboot else BASE
-        facts = header_facts(rom, base)
+        image = Image(rom, MB_BASE if multiboot else BASE)
+        facts = header_facts(image)
         require(ida_idp.set_processor_type('ARM:ARM7TDMI', ida_idp.SETPROC_LOADER), 'Cannot select ARM7TDMI processor')
         # Thumb-1 compilers also use BL for long intra-function jumps.
         ida_idp.process_config_directive('ARM_DISABLE_BL_JUMPS = NO')
@@ -57,7 +57,7 @@ def load_file(li: loader_input_t, neflags: int, format_name: str) -> int:
         ida_ida.inf_set_be(False)  # noqa: FBT003
         db = Database.open()
         require(not ida_ida.inf_is_be() and db.bitness == 32, 'Cannot establish 32-bit little-endian addressing')
-        _setup_database(db, li, rom, facts, base)
+        _setup_database(Annotator(db, image), li, facts)
     except (LoadError, IdaDomainError) as exc:
         error(f'Load failed: {exc}')
         return 0
@@ -65,11 +65,12 @@ def load_file(li: loader_input_t, neflags: int, format_name: str) -> int:
     return 1
 
 
-def _setup_database(db: Database, li: loader_input_t, rom: bytes, facts: HeaderFacts, base: int) -> None:
-    map_image(db, li, len(rom), base)
-    annotate_hardware(db, rom, base)
-    recovery = recover_startup(rom, base)
-    apply_recovery(db, rom, recovery)
-    report(db, facts, base, recovery)
-    seed_analysis(db, rom, recovery, base)
-    schedule_post_analysis(db, rom, recovery, base)
+def _setup_database(annotator: Annotator, li: loader_input_t, facts: HeaderFacts) -> None:
+    db, image = annotator.db, annotator.image
+    map_image(db, li, image)
+    annotator.hardware()
+    recovery = recover_startup(image.rom, image.base)
+    apply_recovery(annotator, recovery)
+    annotator.report(facts, recovery)
+    seed_analysis(annotator, recovery)
+    schedule_post_analysis(db, image, recovery)

@@ -6,7 +6,7 @@ from roms import BASE, FORMAT, MB_BASE, MB_FORMAT, LoaderInput, make_multiboot, 
 
 from idagba import recognition
 from idagba.recognition import RELAXED_FORMAT, accept_file, recognize
-from idagba.rom import arm_branch_target, header_facts
+from idagba.rom import Image, arm_branch_target, header_facts
 
 
 def test_accept_file_restores_position():
@@ -63,18 +63,18 @@ def test_header_fact_warnings():
     rom, _ = make_synthetic()
     unusual = bytearray(rom)
     struct.pack_into('<I', unusual, 0, 0xE12FFF1E)
-    assert any('entry' in warning.lower() for warning in header_facts(bytes(unusual)).warnings)
+    assert any('entry' in warning.lower() for warning in header_facts(Image(bytes(unusual))).warnings)
     checksum_bad = bytearray(rom)
     checksum_bad[0xA0] ^= 1
-    facts = header_facts(bytes(checksum_bad))
+    facts = header_facts(Image(bytes(checksum_bad)))
     assert any('checksum' in warning.lower() for warning in facts.warnings)
     odd_header = bytearray(rom)
     odd_header[0xB3] = 1
     odd_header[0xB5] = 1
-    odd_facts = header_facts(bytes(odd_header))
+    odd_facts = header_facts(Image(bytes(odd_header)))
     assert any('unit' in warning.lower() for warning in odd_facts.warnings)
     assert any('reserved' in warning.lower() for warning in odd_facts.warnings)
-    mb_facts = header_facts(make_multiboot(), MB_BASE)
+    mb_facts = header_facts(Image(make_multiboot(), MB_BASE))
     assert not any('entry' in warning for warning in mb_facts.warnings), mb_facts.warnings
 
 
@@ -104,7 +104,7 @@ def test_unfixed_header():
     unfixed[4:0xA0] = bytes(0x9C)
     unfixed[0xB2] = 0
     assert recognize(unfixed, len(unfixed), 'home.gba') == RELAXED_FORMAT
-    assert any('0x96' in warning for warning in header_facts(bytes(unfixed)).warnings)
+    assert any('0x96' in warning for warning in header_facts(Image(bytes(unfixed))).warnings)
     assert not recognize(unfixed, len(unfixed), 'home.bin')
     unfixed[4] = 1
     assert not recognize(unfixed, len(unfixed), 'home.gba')

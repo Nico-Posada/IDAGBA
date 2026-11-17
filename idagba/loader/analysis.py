@@ -32,6 +32,8 @@ if TYPE_CHECKING:
     from ida_domain import Database
     from ida_ua import insn_t
 
+    from idagba.rom import Image
+
 _MAX_PASSES = 4
 _pending: PostAnalysis | None = None
 
@@ -42,20 +44,19 @@ class PostAnalysis(DatabaseHooks):
     def __init__(
         self,
         db: Database,
-        rom: bytes,
+        image: tuple[int, int],
         copies: Sequence[StartupCopy],
         protected: Sequence[tuple[int, int]],
-        base: int,
     ) -> None:
         super().__init__()
-        self.db, self.rom, self.copies, self.protected, self.base = db, rom, copies, protected, base
+        self.db, self.image, self.copies, self.protected = db, image, copies, protected
         self.passes = 0
 
     def auto_empty(self) -> None:
         global _pending
         self.passes += 1
         try:
-            found = _post_analysis(self.db, self.rom, self.copies, self.protected, self.base)
+            found = self._run_pass()
         except (LoadError, IdaDomainError) as exc:
             warn(f'Post-analysis stopped: {exc}')
             found = 0
@@ -69,178 +70,180 @@ class PostAnalysis(DatabaseHooks):
         self.unhook()
         _pending = None
 
+    def _run_pass(self) -> int:
+        """One pass over the analyzed code; the number of new code references it proved."""
+        swis = self._annotate_swis()
+        branches = self._resolve_veneers()
+        handlers = self._resolve_irq_handlers()
+        log(f'Post-analysis pass: {branches} veneer calls, {handlers} IRQ handlers, {swis} BIOS calls')
+        return branches + handlers
 
-def schedule_post_analysis(
-    db: Database, rom: bytes, recovery: StartupRecovery | StartupRecoveryFailure, base: int
-) -> None:
-    global _pending
-    recovered = isinstance(recovery, StartupRecovery)
-    copies = recovery.copies if recovered else ()
-    protected = recovery.protected if recovered else ((base, base + 0xC0),)
-    _pending = PostAnalysis(db, rom, copies, protected, base)
-    _pending.hook()
-    require(_pending.is_hooked, 'Cannot schedule post-analysis passes')
+    def _decode(self, ea: int | None) -> insn_t | None:
+        db = self.db
+        if ea is None or not db.is_valid_ea(ea) or not db.bytes.is_code_at(ea):
+            return None
 
+        return db.instructions.get_at(ea)
 
-def _decode(db: Database, ea: int | None) -> insn_t | None:
-    if ea is None or not db.is_valid_ea(ea) or not db.bytes.is_code_at(ea):
-        return None
+    def _function_start(self, ea: int) -> int | None:
+        function = self.db.functions.get_at(ea)
+        return function.start_ea if function else None
 
-    return db.instructions.get_at(ea)
+    def _function_starts(self) -> list[int]:
+        return [function.start_ea for function in self.db.functions.get_all()]
 
+    def _claim(self, site: int, pointer: int) -> int | None:
+        """Schedule the code behind a proven pointer; its address, or None when site already references it."""
+        db = self.db
+        address = pointer & ~1
+        if not code_pointer(pointer, self.image, self.copies, self.protected) or any(
+            xref.from_ea == site for xref in db.xrefs.to_ea(address)
+        ):
+            return None
 
-def _function_start(db: Database, ea: int) -> int | None:
-    function = db.functions.get_at(ea)
-    return function.start_ea if function else None
+        if db.bytes.is_data_at(address) or db.bytes.is_tail_at(address):
+            return None
 
+        if db.bytes.is_code_at(address):
+            if arm.thumb_state(address) != pointer & 1:
+                return None
+        else:
+            arm.set_thumb(address, pointer & 1)
 
-def _function_starts(db: Database) -> list[int]:
-    return [function.start_ea for function in db.functions.get_all()]
+        db.auto_analysis.schedule_function(address)
+        return address
 
+    def _annotate_swis(self) -> int:
+        db = self.db
+        count = 0
+        # ponytail: rescans every analyzed instruction per pass; track changed functions if large ROMs stall.
+        for function_ea in self._function_starts():
+            function = db.functions.get_at(function_ea)
+            if function is None:
+                continue
 
-def _link_call(
-    db: Database,
-    site: int,
-    pointer: int,
-    *,
-    rom: bytes,
-    copies: Sequence[StartupCopy],
-    protected: Sequence[tuple[int, int]],
-    base: int,
-) -> bool:
-    """Add a proven call reference from site; True only when it is new."""
-    address = pointer & ~1
-    if not code_pointer(pointer, rom, copies, protected, base) or any(
-        xref.from_ea == site for xref in db.xrefs.to_ea(address)
-    ):
-        return False
+            for insn in list(db.functions.get_instructions(function)):
+                ea = insn.ea
+                if not db.bytes.is_code_at(ea):
+                    continue
 
-    if db.bytes.is_data_at(address) or db.bytes.is_tail_at(address):
-        return False
+                number = arm.swi_number(db, insn)
+                if number is None or db.comments.get_at(ea):
+                    continue
 
-    if db.bytes.is_code_at(address):
-        if arm.thumb_state(address) != pointer & 1:
+                if number < len(BIOS_CALL_NAMES):
+                    count += db.comments.set_at(ea, f'BIOS SWI {number:#04x} {BIOS_CALL_NAMES[number]}')
+
+        return count
+
+    def _resolve_veneers(self) -> int:
+        """Shared Thumb BX veneers: the register differs per caller, so resolve at each call site.
+
+        Constant-register BX (e.g. ldr r1,=main; mov lr,pc; bx r1) is resolved natively by IDA's ARM module.
+        """
+        db = self.db
+        count = 0
+        for ea in self._function_starts():
+            function = db.functions.get_at(ea)
+            first = self._decode(ea) if arm.thumb_state(ea) == 1 else None
+            if function is None or first is None:
+                continue
+
+            branch = first if first.itype == ida_allins.ARM_bx else self._decode(ea + first.size)
+            if branch is None or branch.itype != ida_allins.ARM_bx or branch.ea + branch.size != function.end_ea:
+                continue
+
+            target = db.instructions.get_operand(branch, 0)
+            if not isinstance(target, RegisterOperand):
+                continue
+
+            for call in list(db.xrefs.calls_to_ea(ea)):
+                load = first if branch is not first else self._decode(db.heads.get_previous(call))
+                if branch is first and (
+                    load is None
+                    or load.ea + load.size != call
+                    or self._function_start(load.ea) != self._function_start(call)
+                ):
+                    continue
+
+                pointer = self._literal(load, target.register_number)
+                if pointer is not None:
+                    count += self._link_call(call, pointer)
+
+        return count
+
+    def _literal(self, load: insn_t | None, reg: int) -> int | None:
+        """Value loaded by `ldr reg, =literal` from a pool inside the image or a RAM copy."""
+        db = self.db
+        if load is None or load.itype != ida_allins.ARM_ldr:
+            return None
+
+        destination = db.instructions.get_operand(load, 0)
+        source = db.instructions.get_operand(load, 1)
+        if (
+            not isinstance(destination, RegisterOperand)
+            or destination.register_number != reg
+            or not isinstance(source, MemoryOperand)
+            or not source.is_direct_memory()
+        ):
+            return None
+
+        pool = source.get_address()
+        if pool is None or (
+            pool % 4
+            or not (
+                self.image[0] <= pool <= self.image[1] - 4
+                or any(c.destination <= pool <= c.destination + c.size - 4 for c in self.copies)
+            )
+        ):
+            return None
+
+        return db.bytes.get_dword_at(pool, allow_uninitialized=True)
+
+    def _link_call(self, site: int, pointer: int) -> bool:
+        """Add a proven call reference from site; True only when it is new."""
+        db = self.db
+        address = self._claim(site, pointer)
+        if address is None:
             return False
-    else:
-        arm.set_thumb(address, pointer & 1)
 
-    db.auto_analysis.schedule_function(address)
-    # Keep the actual branch-to-veneer call as well as its proven callee.
-    require(db.xrefs.add_code_ref(site, address, XrefType.CALL_NEAR), f'Cannot add resolved call at {site:#x}')
-    if not db.comments.get_at(site):
-        db.comments.set_at(site, f'Literal/BX veneer resolves to {address:#010x}')
-    return True
+        # Keep the actual branch-to-veneer call as well as its proven callee.
+        require(db.xrefs.add_code_ref(site, address, XrefType.CALL_NEAR), f'Cannot add resolved call at {site:#x}')
+        if not db.comments.get_at(site):
+            db.comments.set_at(site, f'Literal/BX veneer resolves to {address:#010x}')
+        return True
 
+    def _resolve_irq_handlers(self) -> int:
+        """Constant ARM handlers stored to the BIOS IRQ vector near a load of its address."""
+        db = self.db
+        count = 0
+        for vector in IRQ_VECTORS:
+            for load in self._vector_loads(vector):
+                function = db.functions.get_at(load)
+                if function is None:
+                    continue
 
-def _post_analysis(
-    db: Database,
-    rom: bytes,
-    copies: Sequence[StartupCopy],
-    protected: Sequence[tuple[int, int]],
-    base: int,
-) -> int:
-    swis = 0
-    # ponytail: rescans every analyzed instruction per pass; track changed functions if large ROMs stall.
-    # Constant-register BX (e.g. ldr r1,=main; mov lr,pc; bx r1) is resolved natively by IDA's ARM module.
-    for function_ea in _function_starts(db):
-        function = db.functions.get_at(function_ea)
-        if function is None:
-            continue
+                ea = load
+                # ponytail: short fixed window after the vector load, not dataflow over the function.
+                for _ in range(8):
+                    following = db.heads.get_next(ea)
+                    if following is None or following >= function.end_ea:
+                        break
 
-        for insn in list(db.functions.get_instructions(function)):
-            ea = insn.ea
-            if not db.bytes.is_code_at(ea):
-                continue
+                    ea = following
+                    insn = self._decode(ea)
+                    if insn is None:
+                        break
 
-            number = arm.swi_number(db, insn)
-            if number is None or db.comments.get_at(ea):
-                continue
+                    handler = self._stored_handler(insn, vector)
+                    if handler is not None:
+                        count += self._install_irq_handler(ea, handler)
 
-            if number < len(BIOS_CALL_NAMES):
-                swis += db.comments.set_at(ea, f'BIOS SWI {number:#04x} {BIOS_CALL_NAMES[number]}')
+        return count
 
-    branches = _resolve_veneers(db, rom, copies, protected, base)
-    handlers = _resolve_irq_handlers(db, rom, copies, protected, base)
-    log(f'Post-analysis pass: {branches} veneer calls, {handlers} IRQ handlers, {swis} BIOS calls')
-    return branches + handlers
-
-
-def _literal(
-    db: Database, load: insn_t | None, reg: int, *, rom: bytes, copies: Sequence[StartupCopy], base: int
-) -> int | None:
-    if load is None or load.itype != ida_allins.ARM_ldr:
-        return None
-
-    destination = db.instructions.get_operand(load, 0)
-    source = db.instructions.get_operand(load, 1)
-    if (
-        not isinstance(destination, RegisterOperand)
-        or destination.register_number != reg
-        or not isinstance(source, MemoryOperand)
-        or not source.is_direct_memory()
-    ):
-        return None
-
-    pool = source.get_address()
-    if pool is None or (
-        pool % 4
-        or not (
-            base <= pool <= base + len(rom) - 4
-            or any(c.destination <= pool <= c.destination + c.size - 4 for c in copies)
-        )
-    ):
-        return None
-
-    return db.bytes.get_dword_at(pool, allow_uninitialized=True)
-
-
-def _resolve_veneers(
-    db: Database,
-    rom: bytes,
-    copies: Sequence[StartupCopy],
-    protected: Sequence[tuple[int, int]],
-    base: int,
-) -> int:
-    """Shared Thumb BX veneers: the register differs per caller, so resolve at each call site."""
-    count = 0
-    for ea in _function_starts(db):
-        function = db.functions.get_at(ea)
-        first = _decode(db, ea) if arm.thumb_state(ea) == 1 else None
-        if function is None or first is None:
-            continue
-
-        branch = first if first.itype == ida_allins.ARM_bx else _decode(db, ea + first.size)
-        if branch is None or branch.itype != ida_allins.ARM_bx or branch.ea + branch.size != function.end_ea:
-            continue
-
-        target = db.instructions.get_operand(branch, 0)
-        if not isinstance(target, RegisterOperand):
-            continue
-
-        for call in list(db.xrefs.calls_to_ea(ea)):
-            load = first if branch is not first else _decode(db, db.heads.get_previous(call))
-            if branch is first and (
-                load is None or load.ea + load.size != call or _function_start(db, load.ea) != _function_start(db, call)
-            ):
-                continue
-
-            pointer = _literal(db, load, target.register_number, rom=rom, copies=copies, base=base)
-            if pointer is not None:
-                count += _link_call(db, call, pointer, rom=rom, copies=copies, protected=protected, base=base)
-
-    return count
-
-
-def _resolve_irq_handlers(
-    db: Database,
-    rom: bytes,
-    copies: Sequence[StartupCopy],
-    protected: Sequence[tuple[int, int]],
-    base: int,
-) -> int:
-    """Constant ARM handlers stored to the BIOS IRQ vector near a load of its address."""
-    count = 0
-    for vector in IRQ_VECTORS:
+    def _vector_loads(self, vector: int) -> set[int]:
+        """Instructions that reference the vector directly or through a literal pool entry."""
+        db = self.db
         loads = set()
         for xref in db.xrefs.to_ea(vector):
             if db.bytes.is_code_at(xref.from_ea):
@@ -248,67 +251,53 @@ def _resolve_irq_handlers(
             else:
                 loads.update(pool.from_ea for pool in db.xrefs.to_ea(xref.from_ea) if db.bytes.is_code_at(pool.from_ea))
 
-        for load in loads:
-            function = db.functions.get_at(load)
-            if function is None:
-                continue
+        return loads
 
-            ea = load
-            # ponytail: short fixed window after the vector load, not dataflow over the function.
-            for _ in range(8):
-                following = db.heads.get_next(ea)
-                if following is None or following >= function.end_ea:
-                    break
+    def _stored_handler(self, insn: insn_t, vector: int) -> int | None:
+        """Constant ARM pointer that `str handler, [reg, #displacement]` writes to the vector."""
+        db = self.db
+        if insn.itype != ida_allins.ARM_str:
+            return None
 
-                ea = following
-                insn = _decode(db, ea)
-                if insn is None:
-                    break
+        stored = db.instructions.get_operand(insn, 0)
+        address = db.instructions.get_operand(insn, 1)
+        if (
+            not isinstance(address, MemoryOperand)
+            or address.type != OperandType.DISPLACEMENT
+            or not isinstance(stored, RegisterOperand)
+        ):
+            return None
 
-                if insn.itype != ida_allins.ARM_str:
-                    continue
+        phrase, displacement = address.get_phrase_number(), address.get_displacement()
+        if phrase is None or displacement is None:
+            return None
 
-                stored = db.instructions.get_operand(insn, 0)
-                address = db.instructions.get_operand(insn, 1)
-                if (
-                    not isinstance(address, MemoryOperand)
-                    or address.type != OperandType.DISPLACEMENT
-                    or not isinstance(stored, RegisterOperand)
-                ):
-                    continue
+        target = ida_regfinder.find_reg_value(insn.ea, phrase)
+        if target is None or (target + displacement) & 0xFFFFFFFF != vector:
+            return None
 
-                phrase, displacement = address.get_phrase_number(), address.get_displacement()
-                if phrase is None or displacement is None:
-                    continue
+        handler = ida_regfinder.find_reg_value(insn.ea, stored.register_number)
+        return None if handler is None or handler % 4 else handler
 
-                target = ida_regfinder.find_reg_value(ea, phrase)
-                if target is None or (target + displacement) & 0xFFFFFFFF != vector:
-                    continue
+    def _install_irq_handler(self, site: int, handler: int) -> bool:
+        """Reference and name the handler that site installs; True only when it is new."""
+        db = self.db
+        if self._claim(site, handler) is None:
+            return False
 
-                handler = ida_regfinder.find_reg_value(ea, stored.register_number)
-                if (
-                    handler is None
-                    or not code_pointer(handler, rom, copies, protected, base)
-                    or handler % 4
-                    or any(x.from_ea == ea for x in db.xrefs.to_ea(handler))
-                ):
-                    continue
+        if not db.bytes.has_user_name_at(handler):
+            db.names.set_name(handler, 'GBA_IrqMain', SetNameFlags.NOWARN | SetNameFlags.FORCE)
+        require(db.xrefs.add_data_ref(site, handler, XrefType.OFFSET), f'Cannot reference IRQ handler from {site:#x}')
+        if not db.comments.get_at(site):
+            db.comments.set_at(site, f'Installs ARM BIOS IRQ handler {handler:#010x}')
+        return True
 
-                code = db.bytes.is_code_at(handler)
-                user_named = db.bytes.has_user_name_at(handler)
-                if db.bytes.is_data_at(handler) or db.bytes.is_tail_at(handler) or (code and arm.thumb_state(handler)):
-                    continue
 
-                if not code:
-                    arm.set_thumb(handler, 0)
-                db.auto_analysis.schedule_function(handler)
-                if not user_named:
-                    db.names.set_name(handler, 'GBA_IrqMain', SetNameFlags.NOWARN | SetNameFlags.FORCE)
-                require(
-                    db.xrefs.add_data_ref(ea, handler, XrefType.OFFSET), f'Cannot reference IRQ handler from {ea:#x}'
-                )
-                if not db.comments.get_at(ea):
-                    db.comments.set_at(ea, f'Installs ARM BIOS IRQ handler {handler:#010x}')
-                count += 1
-
-    return count
+def schedule_post_analysis(db: Database, image: Image, recovery: StartupRecovery | StartupRecoveryFailure) -> None:
+    global _pending
+    recovered = isinstance(recovery, StartupRecovery)
+    copies = recovery.copies if recovered else ()
+    protected = recovery.protected if recovered else ((image.base, image.base + 0xC0),)
+    _pending = PostAnalysis(db, (image.base, image.end), copies, protected)
+    _pending.hook()
+    require(_pending.is_hooked, 'Cannot schedule post-analysis passes')

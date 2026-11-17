@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 import struct
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 
 @dataclass(frozen=True, slots=True)
@@ -33,6 +33,8 @@ BASE = 0x08000000
 MAX_SIZE = 0x02000000
 MB_BASE = 0x02000000
 MB_MAX = 0x40000
+# GBATEK: the cartridge answers at three addresses that differ only in bus wait state.
+_CARTRIDGE_VIEWS = ((BASE, ''), (0x0A000000, '_WS1'), (0x0C000000, '_WS2'))
 _LOGO = bytes.fromhex("""
 24 ff ae 51 69 9a a2 21 3d 84 82 0a 84 e4 09 ad
 11 24 8b 98 c0 81 7f 21 a3 52 be 19 93 09 ce 20
@@ -76,8 +78,39 @@ def entry_target(image: bytes | bytearray, size: int, base: int = BASE, at: int 
     return target if target is not None and base + 0xC0 <= target <= base + size - 4 else None
 
 
-def header_facts(rom: bytes | bytearray, base: int = BASE) -> HeaderFacts:
-    entry = 0xC0 if base == MB_BASE else 0
+@dataclass(frozen=True, slots=True)
+class Image:
+    """A complete image and its load address; the base alone tells a cartridge from a multiboot image."""
+
+    rom: bytes = field(repr=False)
+    base: int = BASE
+
+    @property
+    def multiboot(self) -> bool:
+        return self.base == MB_BASE
+
+    @property
+    def end(self) -> int:
+        return self.base + len(self.rom)
+
+    @property
+    def entry(self) -> int:
+        """The header's branch for a cartridge; the BIOS enters a multiboot image right after its header."""
+        return self.base + (0xC0 if self.multiboot else 0)
+
+    @property
+    def entry_target(self) -> int | None:
+        return entry_target(self.rom, len(self.rom), self.base, self.entry - self.base)
+
+    @property
+    def views(self) -> tuple[tuple[int, str], ...]:
+        """Address and name suffix of every static view of the image."""
+        return ((self.base, ''),) if self.multiboot else _CARTRIDGE_VIEWS
+
+
+def header_facts(image: Image) -> HeaderFacts:
+    rom, base = image.rom, image.base
+    entry = image.entry - base
     checksum = (-sum(rom[0xA0:0xBD]) - 0x19) & 0xFF
     warnings = []
     if rom[0xB2] != 0x96:
@@ -90,7 +123,7 @@ def header_facts(rom: bytes | bytearray, base: int = BASE) -> HeaderFacts:
         warnings.append(f'unexpected unit code {rom[0xB3]:#x}')
     if any(rom[0xB5:0xBC]) or any(rom[0xBE:0xC0]):
         warnings.append('nonzero reserved header bytes')
-    if entry_target(rom, len(rom), base, entry) is None:
+    if image.entry_target is None:
         warnings.append(f'unusual or out-of-payload ARM entry instruction; entry remains at {base + entry:#010x}')
     return HeaderFacts(
         size=len(rom),
