@@ -65,12 +65,12 @@ def logo_matches(header: bytes | bytearray) -> bool:
         return False
 
     logo = bytearray(header[4:0xA0])
+    expected = bytearray(_LOGO)
+
     for offset, mask in ((0x9C, 0x84), (0x9E, 0x03)):
         logo[offset - 4] &= ~mask & 0xFF
+        expected[offset - 4] &= ~mask & 0xFF
 
-    expected = bytearray(_LOGO)
-    expected[0x9C - 4] &= ~0x84 & 0xFF
-    expected[0x9E - 4] &= ~0x03 & 0xFF
     return logo == expected
 
 
