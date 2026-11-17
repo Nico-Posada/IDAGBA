@@ -24,7 +24,7 @@ from idagba.loader.memory_map import map_image
 from idagba.loader.startup import apply_recovery, seed_analysis
 from idagba.logging import error
 from idagba.recognition import FORMAT, MB_FORMAT, RELAXED_FORMAT, recognize
-from idagba.rom import BASE, MAX_SIZE, MB_BASE, MB_MAX, HeaderFacts, Image, header_facts
+from idagba.rom import BASE, HEADER_SIZE, MAX_SIZE, MB_BASE, MB_MAX, HeaderFacts, Image, header_facts
 
 if TYPE_CHECKING:
     from ida_idaapi import loader_input_t
@@ -40,7 +40,7 @@ def load_file(li: loader_input_t, neflags: int, format_name: str) -> int:
         multiboot = format_name == MB_FORMAT
         size = li.size()
         require(
-            0xC0 <= size <= (MB_MAX if multiboot else MAX_SIZE),
+            HEADER_SIZE <= size <= (MB_MAX if multiboot else MAX_SIZE),
             'Image size must be 192 bytes through 32 MiB (256 KiB for multiboot)',
         )
         li.seek(0)

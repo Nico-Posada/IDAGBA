@@ -1,12 +1,11 @@
 """GBA BIOS SWI call names and Hex-Rays prototypes.
 
 Undocumented SoundWhatever0..4 (0x20..0x24) have no prototype: they stay inline asm.
-
-Reference: https://problemkaputt.de/gbatek.htm#biosfunctions
 """
 
 from __future__ import annotations
 
+# Numbers and names taken from https://problemkaputt.de/gbatek.htm#biosfunctions
 BIOS_CALL_NAMES = (
     'SoftReset', 'RegisterRamReset', 'Halt', 'Stop', 'IntrWait', 'VBlankIntrWait', 'Div', 'DivArm',
     'Sqrt', 'ArcTan', 'ArcTan2', 'CpuSet', 'CpuFastSet', 'GetBiosChecksum', 'BgAffineSet', 'ObjAffineSet',
@@ -17,10 +16,8 @@ BIOS_CALL_NAMES = (
     'MultiBoot', 'HardReset', 'CustomHalt', 'SoundDriverVSyncOff', 'SoundDriverVSyncOn', 'SoundGetJumpList',
 )  # fmt: skip
 
-# Registers per GBATEK; Div/DivArm return quotient:remainder in R0/R1 (and |quotient| in R3).
-# GBATEK documents clobbers only for Halt ("all registers unchanged"); every other prototype
-# gets SPOILS, the r0-r3 list libtonc's swi_call declares. The BIOS SWI handler itself saves
-# and restores R11, R12 and R14, so those are never spoiled.
+# Register arguments and results taken from https://problemkaputt.de/gbatek.htm#biosfunctions
+# Div and DivArm return quotient:remainder in R0/R1 (and |quotient| in R3).
 BIOS_PROTOTYPES = {
     0x00: 'void __usercall __noreturn SWI_SoftReset(void);',
     0x01: 'void __usercall SWI_RegisterRamReset(unsigned int flags@<R0>);',
@@ -63,7 +60,6 @@ BIOS_PROTOTYPES = {
     0x29: 'void __usercall SWI_SoundDriverVSyncOn(void);',
     0x2A: 'void __usercall SWI_SoundGetJumpList(void *dst@<R0>);',
 }
-SPOILS = '__usercall __spoils<R0,R1,R2,R3>'
 
 
 def decode_swi_number(value: int, *, thumb: bool) -> int:

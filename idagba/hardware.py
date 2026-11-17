@@ -1,7 +1,4 @@
-"""GBA hardware register, header and BIOS workspace annotation tables.
-
-Hardware reference: https://mgba-emu.github.io/gbatek/
-"""
+"""GBA hardware register, header and BIOS workspace annotation tables."""
 
 from __future__ import annotations
 
@@ -27,8 +24,7 @@ class Register:
     count: int = 1
 
 
-IRQ_VECTORS = (0x03007FFC, 0x03FFFFFC)
-
+# Layout taken from https://mgba-emu.github.io/gbatek/#gbacartridgeheader
 HEADER_FIELDS = (
     HardwareAnnotation(0x04, 156, 1, 'GBA_HDR_LOGO'),
     HardwareAnnotation(0xA0, 12, 1, 'GBA_HDR_TITLE', 'char value[12];'),
@@ -43,6 +39,7 @@ HEADER_FIELDS = (
     HardwareAnnotation(0xBE, 2, 1, 'GBA_HDR_RESERVED2'),
 )
 
+# Offsets from the start of IWRAM, taken from https://mgba-emu.github.io/gbatek/#biosramusage
 WORKSPACE = (
     HardwareAnnotation(0x7FF0, 4, 4, 'GBA_SOUND_BUFFER', 'unsigned int value;'),
     HardwareAnnotation(0x7FF8, 2, 2, 'GBA_IRQ_FLAGS', 'unsigned short value;'),
@@ -57,6 +54,7 @@ WORKSPACE = (
     ),
 )
 
+# Offsets from 0x04000000, taken from https://mgba-emu.github.io/gbatek/#gbaiomap
 # fmt: off
 REGISTERS = (
     # LCD / graphics

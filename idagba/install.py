@@ -9,11 +9,6 @@ if TYPE_CHECKING:
     from pathlib import Path
 
 
-def _first_line(path: Path) -> str:
-    with path.open(encoding='utf-8') as file:
-        return file.readline()
-
-
 def install_loader_link(loaders_dir: Path, target: Path) -> Path:
     """Make loaders_dir/<target.name> resolve to target: a symlink, or a copy where symlinks are refused.
 
@@ -44,3 +39,8 @@ def install_loader_link(loaders_dir: Path, target: Path) -> Path:
         shutil.copyfile(target, link)
 
     return link
+
+
+def _first_line(path: Path) -> str:
+    with path.open(encoding='utf-8') as file:
+        return file.readline()

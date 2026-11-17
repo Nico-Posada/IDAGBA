@@ -23,7 +23,6 @@ from idagba import arm
 from idagba.bios import BIOS_CALL_NAMES
 from idagba.crt0 import StartupCopy, StartupRecovery, StartupRecoveryFailure, code_pointer
 from idagba.errors import LoadError, require
-from idagba.hardware import IRQ_VECTORS
 from idagba.logging import log, warn
 from idagba.rom import HEADER_SIZE
 
@@ -35,12 +34,23 @@ if TYPE_CHECKING:
 
     from idagba.rom import Image
 
-_MAX_PASSES = 4
 _pending: PostAnalysis | None = None
+
+
+def schedule_post_analysis(db: Database, image: Image, recovery: StartupRecovery | StartupRecoveryFailure) -> None:
+    global _pending
+    recovered = isinstance(recovery, StartupRecovery)
+    copies = recovery.copies if recovered else ()
+    reserved = recovery.reserved if recovered else ((image.base, image.base + HEADER_SIZE),)
+    _pending = PostAnalysis(db, (image.base, image.end), copies, reserved)
+    _pending.hook()
+    require(_pending.is_hooked, 'Cannot schedule post-analysis passes')
 
 
 class PostAnalysis(DatabaseHooks):
     """Re-run native-analysis extensions on auto_empty until a pass resolves nothing new."""
+
+    MAX_PASSES = 4
 
     def __init__(
         self,
@@ -62,8 +72,8 @@ class PostAnalysis(DatabaseHooks):
             warn(f'Post-analysis stopped: {exc}')
             found = 0
 
-        # Stop after _MAX_PASSES passes even when they keep finding code.
-        if not found or self.passes >= _MAX_PASSES:
+        # Stop after MAX_PASSES passes even when they keep finding code.
+        if not found or self.passes >= self.MAX_PASSES:
             self.unhook()
             _pending = None
 
@@ -79,41 +89,6 @@ class PostAnalysis(DatabaseHooks):
         handlers = self._resolve_irq_handlers()
         log(f'Post-analysis pass: {branches} veneer calls, {handlers} IRQ handlers, {swis} BIOS calls')
         return branches + handlers
-
-    def _decode(self, ea: int | None) -> insn_t | None:
-        db = self.db
-        if ea is None or not db.is_valid_ea(ea) or not db.bytes.is_code_at(ea):
-            return None
-
-        return db.instructions.get_at(ea)
-
-    def _function_start(self, ea: int) -> int | None:
-        function = self.db.functions.get_at(ea)
-        return function.start_ea if function else None
-
-    def _function_starts(self) -> list[int]:
-        return [function.start_ea for function in self.db.functions.get_all()]
-
-    def _claim(self, site: int, pointer: int) -> int | None:
-        """Schedule the code behind a proven pointer; its address, or None when site already references it."""
-        db = self.db
-        address = pointer & ~1
-        if not code_pointer(pointer, self.image, self.copies, self.reserved) or any(
-            xref.from_ea == site for xref in db.xrefs.to_ea(address)
-        ):
-            return None
-
-        if db.bytes.is_data_at(address) or db.bytes.is_tail_at(address):
-            return None
-
-        if db.bytes.is_code_at(address):
-            if arm.thumb_state(address) != pointer & 1:
-                return None
-        else:
-            arm.set_thumb(address, pointer & 1)
-
-        db.auto_analysis.schedule_function(address)
-        return address
 
     def _annotate_swis(self) -> int:
         db = self.db
@@ -220,7 +195,8 @@ class PostAnalysis(DatabaseHooks):
         """Constant ARM handlers stored to the BIOS IRQ vector near a load of its address."""
         db = self.db
         count = 0
-        for vector in IRQ_VECTORS:
+        # The BIOS IRQ handler pointer and its mirror.
+        for vector in (0x03007FFC, 0x03FFFFFC):
             for load in self._vector_loads(vector):
                 function = db.functions.get_at(load)
                 if function is None:
@@ -297,12 +273,37 @@ class PostAnalysis(DatabaseHooks):
 
         return True
 
+    def _claim(self, site: int, pointer: int) -> int | None:
+        """Schedule the code behind a proven pointer; its address, or None when site already references it."""
+        db = self.db
+        address = pointer & ~1
+        if not code_pointer(pointer, self.image, self.copies, self.reserved) or any(
+            xref.from_ea == site for xref in db.xrefs.to_ea(address)
+        ):
+            return None
 
-def schedule_post_analysis(db: Database, image: Image, recovery: StartupRecovery | StartupRecoveryFailure) -> None:
-    global _pending
-    recovered = isinstance(recovery, StartupRecovery)
-    copies = recovery.copies if recovered else ()
-    reserved = recovery.reserved if recovered else ((image.base, image.base + HEADER_SIZE),)
-    _pending = PostAnalysis(db, (image.base, image.end), copies, reserved)
-    _pending.hook()
-    require(_pending.is_hooked, 'Cannot schedule post-analysis passes')
+        if db.bytes.is_data_at(address) or db.bytes.is_tail_at(address):
+            return None
+
+        if db.bytes.is_code_at(address):
+            if arm.thumb_state(address) != pointer & 1:
+                return None
+        else:
+            arm.set_thumb(address, pointer & 1)
+
+        db.auto_analysis.schedule_function(address)
+        return address
+
+    def _decode(self, ea: int | None) -> insn_t | None:
+        db = self.db
+        if ea is None or not db.is_valid_ea(ea) or not db.bytes.is_code_at(ea):
+            return None
+
+        return db.instructions.get_at(ea)
+
+    def _function_start(self, ea: int) -> int | None:
+        function = self.db.functions.get_at(ea)
+        return function.start_ea if function else None
+
+    def _function_starts(self) -> list[int]:
+        return [function.start_ea for function in self.db.functions.get_all()]

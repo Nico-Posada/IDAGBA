@@ -14,7 +14,7 @@ import ida_loader
 from ida_domain.segments import AddressingMode, AddSegmentFlags, PredefinedClass, SegmentPermissions
 
 from idagba.errors import LoadError, require
-from idagba.rom import BASE, MB_BASE
+from idagba.rom import BASE, EWRAM, IWRAM, MB_BASE
 
 if TYPE_CHECKING:
     from ida_domain import Database
@@ -35,6 +35,20 @@ class MemoryRegion:
     comment: str | None = None
 
 
+def map_image(db: Database, li: loader_input_t, image: Image) -> None:
+    for region in _regions(image):
+        _create(db, region)
+
+    size = len(image.rom)
+    for view, _ in image.views:
+        # Only the image's own address is patchable; the wait-state views are static copies of the file.
+        patchable = ida_loader.FILEREG_PATCHABLE if view == image.base else 0
+        require(
+            li.file2base(0, view, view + size, patchable),  # ty: ignore[invalid-argument-type]
+            f'Cannot map image at {view:#x}',
+        )
+
+
 def _regions(image: Image) -> list[MemoryRegion]:
     size = len(image.rom)
     rx = SegmentPermissions.READ | SegmentPermissions.EXEC
@@ -43,10 +57,8 @@ def _regions(image: Image) -> list[MemoryRegion]:
     multiboot = f'Multiboot image occupies {MB_BASE:#010x}..{MB_BASE + size:#010x}; no cartridge ROM is mapped.'
     regions = [
         MemoryRegion('BIOS', 0, 0x4000, rx, code),
-        MemoryRegion(
-            'EWRAM', 0x02000000, 0x02040000, rw | SegmentPermissions.EXEC, data, multiboot if image.multiboot else None
-        ),
-        MemoryRegion('IWRAM', 0x03000000, 0x03008000, rw | SegmentPermissions.EXEC, data),
+        MemoryRegion('EWRAM', *EWRAM, rw | SegmentPermissions.EXEC, data, multiboot if image.multiboot else None),
+        MemoryRegion('IWRAM', *IWRAM, rw | SegmentPermissions.EXEC, data),
         # A static copy of the top of IWRAM, not an emulated mirror.
         MemoryRegion(
             'IWRAM_BIOS_MIRROR',
@@ -121,17 +133,3 @@ def _create(db: Database, region: MemoryRegion) -> None:
     )
     if region.comment:
         db.segments.set_comment(segment, region.comment, repeatable=True)
-
-
-def map_image(db: Database, li: loader_input_t, image: Image) -> None:
-    for region in _regions(image):
-        _create(db, region)
-
-    size = len(image.rom)
-    for view, _ in image.views:
-        # Only the image's own address is patchable; the wait-state views are static copies of the file.
-        patchable = ida_loader.FILEREG_PATCHABLE if view == image.base else 0
-        require(
-            li.file2base(0, view, view + size, patchable),  # ty: ignore[invalid-argument-type]
-            f'Cannot map image at {view:#x}',
-        )
