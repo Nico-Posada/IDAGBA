@@ -186,7 +186,7 @@ class Annotator:
         ]
 
         if facts.unit:
-            lins.append(f'Unit: {facts.unit:#x}')
+            lines.append(f'Unit: {facts.unit:#x}')
 
         if facts.device:
             lines.append(f'Device: {facts.device:#x}')
