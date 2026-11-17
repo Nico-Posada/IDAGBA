@@ -95,24 +95,19 @@ def make_synthetic(thumb: tuple[int, ...] = THUMB_TEMPLATE) -> tuple[bytes, dict
     for index, halfword in enumerate(thumb):
         struct.pack_into('<H', rom, 0x268 + index * 2, halfword)
 
+    # The assembler emits the pool right behind the code: one word per load, in order of first use.
     literal_offsets = {}
-    next_literal = 0x400
-    for instruction_offset, value in LOAD_VALUES.items():
+    for index, instruction_offset in enumerate(sorted(LOAD_VALUES)):
         instruction = 0x240 + instruction_offset
-        literal = next_literal
-        next_literal += 4
+        literal = 0x240 + 0xD0 + index * 4
         literal_offsets[instruction_offset] = literal
-        struct.pack_into('<I', rom, literal, value)
+        struct.pack_into('<I', rom, literal, LOAD_VALUES[instruction_offset])
         if instruction_offset in (0x10, 0x1C):
-            immediate = literal - (instruction + 8)
-            assert 0 <= immediate <= 0xFFF
-            word = struct.unpack_from('<I', rom, instruction)[0]
-            struct.pack_into('<I', rom, instruction, (word & 0xFFFFF000) | immediate)
+            immediate = struct.unpack_from('<I', rom, instruction)[0] & 0xFFF
+            assert instruction + 8 + immediate == literal
         else:
-            immediate = (literal - ((instruction + 4) & ~3)) // 4
-            assert 0 <= immediate <= 0xFF
-            halfword = struct.unpack_from('<H', rom, instruction)[0]
-            struct.pack_into('<H', rom, instruction, (halfword & 0xFF00) | immediate)
+            immediate = struct.unpack_from('<H', rom, instruction)[0] & 0xFF
+            assert ((instruction + 4) & ~3) + immediate * 4 == literal
 
     # Thumb main: poll VCOUNT, mutate initialized RAM, call copied ARM, read WS1 ROM.
     main_halfwords = (

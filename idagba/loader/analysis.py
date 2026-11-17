@@ -25,6 +25,7 @@ from idagba.crt0 import StartupCopy, StartupRecovery, StartupRecoveryFailure, co
 from idagba.errors import LoadError, require
 from idagba.hardware import IRQ_VECTORS
 from idagba.logging import log, warn
+from idagba.rom import HEADER_SIZE
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -46,10 +47,10 @@ class PostAnalysis(DatabaseHooks):
         db: Database,
         image: tuple[int, int],
         copies: Sequence[StartupCopy],
-        protected: Sequence[tuple[int, int]],
+        reserved: Sequence[tuple[int, int]],
     ) -> None:
         super().__init__()
-        self.db, self.image, self.copies, self.protected = db, image, copies, protected
+        self.db, self.image, self.copies, self.reserved = db, image, copies, reserved
         self.passes = 0
 
     def auto_empty(self) -> None:
@@ -97,7 +98,7 @@ class PostAnalysis(DatabaseHooks):
         """Schedule the code behind a proven pointer; its address, or None when site already references it."""
         db = self.db
         address = pointer & ~1
-        if not code_pointer(pointer, self.image, self.copies, self.protected) or any(
+        if not code_pointer(pointer, self.image, self.copies, self.reserved) or any(
             xref.from_ea == site for xref in db.xrefs.to_ea(address)
         ):
             return None
@@ -301,7 +302,7 @@ def schedule_post_analysis(db: Database, image: Image, recovery: StartupRecovery
     global _pending
     recovered = isinstance(recovery, StartupRecovery)
     copies = recovery.copies if recovered else ()
-    protected = recovery.protected if recovered else ((image.base, image.base + 0xC0),)
-    _pending = PostAnalysis(db, (image.base, image.end), copies, protected)
+    reserved = recovery.reserved if recovered else ((image.base, image.base + HEADER_SIZE),)
+    _pending = PostAnalysis(db, (image.base, image.end), copies, reserved)
     _pending.hook()
     require(_pending.is_hooked, 'Cannot schedule post-analysis passes')

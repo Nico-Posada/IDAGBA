@@ -33,7 +33,9 @@ BASE = 0x08000000
 MAX_SIZE = 0x02000000
 MB_BASE = 0x02000000
 MB_MAX = 0x40000
-_CARTRIDGE_VIEWS = ((BASE, ''), (0x0A000000, '_WS1'), (0x0C000000, '_WS2'))
+HEADER_SIZE = 0xC0
+EWRAM = (0x02000000, 0x02040000)
+IWRAM = (0x03000000, 0x03008000)
 
 
 def arm_branch_target(word: int, ea: int) -> int | None:
@@ -65,7 +67,6 @@ def logo_matches(header: bytes | bytearray) -> bool:
     """)
     logo = bytearray(header[4:0xA0])
 
-    # GBATEK: the cartridge answers at three addresses that differ only in bus wait state.
     for offset, mask in ((0x9C, 0x84), (0x9E, 0x03)):
         logo[offset - 4] &= ~mask & 0xFF
         expected[offset - 4] &= ~mask & 0xFF
@@ -105,7 +106,11 @@ class Image:
     @property
     def views(self) -> tuple[tuple[int, str], ...]:
         """Address and name suffix of every static view of the image."""
-        return ((self.base, ''),) if self.multiboot else _CARTRIDGE_VIEWS
+        if self.multiboot:
+            return ((self.base, ''),)
+
+        # GBATEK: the cartridge answers at three addresses that differ only in bus wait state.
+        return ((BASE, ''), (0x0A000000, '_WS1'), (0x0C000000, '_WS2'))
 
 
 def header_facts(image: Image) -> HeaderFacts:

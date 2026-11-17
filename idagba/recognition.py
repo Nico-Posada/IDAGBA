@@ -12,7 +12,7 @@ from __future__ import annotations
 import struct
 from typing import Protocol
 
-from idagba.crt0 import TEXT_START, StartupRecoveryFailure, find_crt
+from idagba.crt0 import Crt0, find_crt0
 from idagba.rom import BASE, MAX_SIZE, MB_BASE, MB_MAX, entry_target, logo_matches
 
 FORMAT = 'Nintendo Game Boy Advance ROM (ARM7TDMI)'
@@ -71,10 +71,10 @@ def accept_file(li: LoaderInput, filename: str) -> dict[str, str | int] | int:
 
 
 def looks_multiboot(image: bytes) -> bool:
-    found = find_crt(image)
-    if not isinstance(found, StartupRecoveryFailure):
-        literal = found.literal_offset(TEXT_START)
-        return literal + 4 <= len(image) and struct.unpack_from('<I', image, literal)[0] == MB_BASE
+    crt0 = find_crt0(image)
+    if isinstance(crt0, Crt0):
+        pool = crt0.pool()
+        return pool is not None and pool.text_start == MB_BASE
 
     return _literal_vote(image)
 

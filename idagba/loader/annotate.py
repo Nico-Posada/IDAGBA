@@ -174,8 +174,7 @@ class Annotator:
                 for copy in recovery.copies
             )
             lines.append(f'Code pointers: constructors={recovery.constructors:#010x}, main={recovery.main:#010x}')
-            lines.extend(recovery.stacks)
-            lines.extend(recovery.bss)
+            lines.extend(note.text for note in recovery.notes)
 
         self.comment(base, '\n'.join(lines))
         for line in lines:

@@ -46,9 +46,12 @@ def _invalid_startups() -> list[bytes]:
     rom, literals = make_synthetic()
     near = bytearray(rom)
     near[0x268 + 2] ^= 1
+    relocated = bytearray(rom)
+    relocated[0x268] ^= 1  # ldr r0, =__text_start reading another pool slot
     return [
         bytes(near),
-        rom[:0x410],  # missing literal pool
+        bytes(relocated),
+        rom[:0x340],  # file ends inside the literal pool
         _patched(rom, literals, (0x68, 0x030000FC)),  # backwards
         _patched(rom, literals, (0x70, 0x03000104), (0x72, 0x03000110)),  # overlapping destinations
         _patched(rom, literals, (0x86, 0x08000804)),  # overlapping sources

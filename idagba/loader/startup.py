@@ -30,8 +30,9 @@ def apply_recovery(annotator: Annotator, recovery: StartupRecovery | StartupReco
         annotator.comment(source, text)
         annotator.comment(dest, text)
 
-    for hint in recovery.hints:
-        annotator.comment(hint.address, hint.text)
+    for note in recovery.notes:
+        if note.address is not None:
+            annotator.comment(note.address, note.text)
 
 
 def seed_analysis(annotator: Annotator, recovery: StartupRecovery | StartupRecoveryFailure) -> None:
@@ -62,7 +63,10 @@ def _seed_helpers(annotator: Annotator, recovery: StartupRecovery) -> None:
     db = annotator.db
     start = recovery.start
     set_thumb(start, 0)
+    # The startup enters Thumb state after ten ARM instructions.
     set_thumb(start + 0x28, 1)
+    # Offsets from ClearMem taken from
+    # https://github.com/devkitPro/devkitarm-crtls/blob/333d62c/gba_crt0.s#L194-L253
     helpers = recovery.clear_mem
     for delta, routine in ((0, 'GBA_ClearMem'), (0x12, 'GBA_BxR3'), (0x14, 'GBA_CopyMemChk')):
         address = helpers + delta
@@ -84,6 +88,8 @@ def _seed_calls(annotator: Annotator, recovery: StartupRecovery) -> None:
     """Schedule the two routines crt0 calls through r3 and reference them from their call sites."""
     db = annotator.db
     start = recovery.start
+    # Offsets of the two `bl _blx_r3_stub` call sites taken from
+    # https://github.com/devkitPro/devkitarm-crtls/blob/333d62c/gba_crt0.s#L176-L184
     for pointer, routine, callsite in (
         (recovery.constructors, '__libc_init_array', 0x98),
         (recovery.main, 'main', 0xA2),
