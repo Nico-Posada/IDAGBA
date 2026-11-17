@@ -38,6 +38,7 @@ def _segment(db: Database, ea: int) -> segment_t:
     if segment is None:
         msg = f'No segment at {ea:#x}'
         raise LoadError(msg)
+
     return segment
 
 
@@ -73,6 +74,7 @@ def map_image(db: Database, li: loader_input_t, size: int, base: int) -> None:
         if segment is None:
             msg = f'Cannot create segment {region.name}'
             raise LoadError(msg)
+
         # Changing addressing re-plans the whole segment for analysis, which would analyze the NOAA ROM views.
         if db.segments.get_bitness(segment) != 32:
             db.segments.set_addressing_mode(segment, AddressingMode.BIT32)
@@ -102,6 +104,7 @@ def map_image(db: Database, li: loader_input_t, size: int, base: int) -> None:
                     f'Static view of ROM at {BASE:#010x}; IDB patches are not synchronized between views.',
                     repeatable=True,
                 )
+
         eeprom_segment = db.segments.get_by_name('EEPROM')
         if eeprom_segment:
             db.segments.set_comment(

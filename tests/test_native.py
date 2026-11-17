@@ -156,6 +156,7 @@ def subexpressions(expr: PseudocodeExpression) -> Iterator[PseudocodeExpression]
     for child in (expr.x, expr.y, expr.z):
         if child is not None:
             yield from subexpressions(child)
+
     for arg in expr.call_args or ():
         yield from subexpressions(arg.expression)
 
@@ -208,6 +209,7 @@ def palette_writes(cfunc: PseudocodeFunction) -> dict[tuple[int | None, int], in
 
         if member.x.obj_ea == 0x05000000 and index.number is not None and value.number is not None:
             writes[member.member_offset, index.number.value] = value.number.value
+
     return writes
 
 
@@ -319,6 +321,7 @@ def test_synthetic(load: Loader, file_type: str | None):
             (0x080002FE, 'GBA_CopyMem'),
         ):
             named(db, ea, name)
+
         assert thumb(0x08000240) == 0
         assert thumb(0x08000268) == 1
         for ea in (0x080002E8, 0x080002FA, 0x080002FC):
@@ -380,6 +383,7 @@ def test_synthetic(load: Loader, file_type: str | None):
             named(db, ea, name)
             assert db.bytes.get_data_size_at(ea) == 2
             assert 'volatile' in type_text(db, ea)
+
         segment(db, 0x0D000000, 'EEPROM', 0x0D000000, 0x0E000000)
         named(db, 0x07000000, 'GBA_OAM')
         assert db.heads.bounds(0x07000000)[1] == 0x07000400
@@ -403,6 +407,7 @@ def test_palette(load: Loader):
             element = db.types.get_array_element_type(member.type)
             unsigned16 = element is not None and TypeAttr.UINT16 in db.types.get_details(element).attributes
             members.append((member.name, member.offset, db.types.get_array_length(member.type), unsigned16))
+
         assert members == [('BG_PALETTE', 0, 256, True), ('OBJ_PALETTE', 0x200, 256, True)]
 
         named(db, 0x05000000, 'GBA_PALETTE')
@@ -439,6 +444,7 @@ def test_large(load: Loader):
             segment(db, base, name, base, base + size)
             assert bytes_at(db, base + size - 4, 4) == struct.pack('<I', 0xA55A3CC3)
             assert unloaded(db, base + size)
+
         segment(db, 0x0DFFFF00, 'EEPROM', 0x0DFFFF00, 0x0E000000)
 
 
@@ -536,5 +542,6 @@ def test_real(load: Loader):
         entry_comment = repeatable_comment(db, BASE)
         for clue in ('ROM TITLE', 'SBTP', '27', 'SRAM_V113'):
             assert clue in entry_comment
+
         for ea in (0x08000870, 0x08012B20, 0x030018DC):
             db.pseudocode.decompile(ea)

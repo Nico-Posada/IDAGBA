@@ -60,6 +60,7 @@ def load_file(li: loader_input_t, neflags: int, format_name: str) -> int:
     except (LoadError, IdaDomainError) as exc:
         log(f'Load failed: {exc}')
         return 0
+
     return 1
 
 

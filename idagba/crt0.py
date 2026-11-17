@@ -130,6 +130,7 @@ def crt_literal(rom: bytes, offset: int, delta: int) -> int:
     """File offset of the literal loaded by the stock crt0 instruction at offset + delta."""
     if delta in (0x10, 0x1C):
         return offset + delta + 8 + (struct.unpack_from('<I', rom, offset + delta)[0] & 0xFFF)
+
     return ((offset + delta + 4) & ~3) + 4 * (struct.unpack_from('<H', rom, offset + delta)[0] & 0xFF)
 
 
@@ -155,6 +156,7 @@ def find_crt(rom: bytes) -> tuple[int, tuple[int, ...]] | StartupRecoveryFailure
 
         branches.append(offset)
         offset = target
+
     return StartupRecoveryFailure('no stock crt0 within four entry branches')
 
 

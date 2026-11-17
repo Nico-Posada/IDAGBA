@@ -89,4 +89,5 @@ def looks_multiboot(image: bytes) -> bool:
         for value in values:
             ewram += value & ~0x1FFFF == MB_BASE
             cartridge += value & ~0x1FFFF == BASE
+
     return cartridge < 2 and ewram > 0

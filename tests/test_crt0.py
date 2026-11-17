@@ -29,6 +29,7 @@ def _patched(rom: bytes, literals: dict[int, int], *patches: tuple[int, int]) ->
     patched = bytearray(rom)
     for delta, value in patches:
         struct.pack_into('<I', patched, literals[delta], value)
+
     return bytes(patched)
 
 

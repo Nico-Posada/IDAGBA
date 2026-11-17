@@ -38,6 +38,7 @@ def start() -> None:
     for source in (home / 'ida.reg', *home.glob('*.hexlic')):
         if source.is_file():
             shutil.copy2(source, user / source.name)
+
     os.environ.update(IDADIR=directory, IDAUSR=str(user), IDA_NO_HISTORY='1', QT_QPA_PLATFORM='offscreen')
     # Hermetic: IDAPython must use this interpreter's packages, not IDA's own venv.
     os.environ.pop('IDAPYTHON_VENV_EXECUTABLE', None)

@@ -227,6 +227,7 @@ def _resolve_veneers(
             pointer = _literal(db, load, target.register_number, rom=rom, copies=copies, base=base)
             if pointer is not None:
                 count += _link_call(db, call, pointer, rom=rom, copies=copies, protected=protected, base=base)
+
     return count
 
 
@@ -309,4 +310,5 @@ def _resolve_irq_handlers(
                 if not db.comments.get_at(ea):
                     db.comments.set_at(ea, f'Installs ARM BIOS IRQ handler {handler:#010x}')
                 count += 1
+
     return count

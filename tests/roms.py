@@ -162,6 +162,7 @@ def make_multiboot() -> bytes:
         value = struct.unpack_from('<I', rom, literal)[0]
         if value & 0xFF000000 == BASE:
             struct.pack_into('<I', rom, literal, value - BASE + MB_BASE)
+
     # The EWRAM section is linked where it is loaded, so crt0 copies it onto itself.
     struct.pack_into('<I', rom, literals[0x88], MB_BASE + 0x860)
     struct.pack_into('<I', rom, literals[0x8A], MB_BASE + 0x868)
