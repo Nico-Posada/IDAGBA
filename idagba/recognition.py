@@ -81,19 +81,26 @@ def looks_multiboot(image: bytes) -> bool:
 
 
 def _literal_vote(image: bytes) -> bool:
-    # mGBA's GBAIsMB literal vote, without its toolchain-specific branch rules.
-    # A tiny cartridge with EWRAM-heavy startup code can be misdetected.
+    """Whether the code after the header points into EWRAM and not into the cartridge."""
+    # Counting rule taken from GBAIsMB in
+    # https://github.com/mgba-emu/mgba/blob/cfef853/src/gba/gba.c#L791-L844
+    # without the entry-branch checks that precede it there. A tiny cartridge whose
+    # startup code mentions EWRAM can be taken for a multiboot image.
     ewram = cartridge = 0
-    for ea in range(HEADER_SIZE, min(len(image) - 3, HEADER_SIZE + 128 * 4), 4):
-        word = struct.unpack_from('<I', image, ea)[0]
-        values = [word]
-        if word & 0x0F7F0000 == 0x051F0000:  # LDR Rd, [PC, #+/-imm12]
-            literal = ea + 8 + (word & 0xFFF if word & 0x00800000 else -(word & 0xFFF))
+    scanned_words = 128
+    for offset in range(HEADER_SIZE, min(len(image) - 3, HEADER_SIZE + scanned_words * 4), 4):
+        word = struct.unpack_from('<I', image, offset)[0]
+        candidates = [word]
+        # ldr rX, [pc, #imm]: the literal it loads is a candidate too.
+        if word & 0x0F7F0000 == 0x051F0000:
+            imm = word & 0xFFF
+            literal = offset + 8 + (imm if word & 0x00800000 else -imm)
             if 0 <= literal <= len(image) - 4:
-                values.append(struct.unpack_from('<I', image, literal)[0])
+                candidates.append(struct.unpack_from('<I', image, literal)[0])
 
-        for value in values:
+        # A candidate counts when it is an address in the first 128 KiB of a region.
+        for value in candidates:
             ewram += value & ~0x1FFFF == MB_BASE
             cartridge += value & ~0x1FFFF == BASE
 
-    return cartridge < 2 and ewram > 0
+    return ewram > 0 and cartridge < 2
