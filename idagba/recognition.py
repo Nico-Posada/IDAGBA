@@ -90,6 +90,7 @@ def _literal_vote(image: bytes) -> bool:
             literal = ea + 8 + (word & 0xFFF if word & 0x00800000 else -(word & 0xFFF))
             if 0 <= literal <= len(image) - 4:
                 values.append(struct.unpack_from('<I', image, literal)[0])
+
         for value in values:
             ewram += value & ~0x1FFFF == MB_BASE
             cartridge += value & ~0x1FFFF == BASE

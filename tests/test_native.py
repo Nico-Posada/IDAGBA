@@ -65,6 +65,7 @@ def load(tmp_path: Path) -> Loader:
     def _load(name: str, data: bytes, file_type: str | None = FORMAT) -> Generator[Database, None, None]:
         if file_type and ida_domain.__ida_version__ < Version('9.2'):
             pytest.skip('idalib before IDA 9.2 exits on the -T switch that selects a loader')
+
         source = tmp_path / f'{name}.gba'
         source.write_bytes(data)
         log = tmp_path / f'{name}.log'
@@ -78,6 +79,7 @@ def load(tmp_path: Path) -> Loader:
             db = Database.open(str(source), args=options, save_on_close=False)
         except DatabaseError as exc:
             pytest.fail(f'{exc}\nIDA log:\n{log.read_text(errors="replace") if log.exists() else ""}')
+
         with db:
             db.auto_analysis.wait()
             yield db
@@ -528,6 +530,7 @@ def test_indirect(load: Loader):
 def test_real(load: Loader):
     if not REAL_ROM.is_file():
         pytest.skip(f'{REAL_ROM} is missing; set IDAGBA_REAL_ROM')
+
     source = REAL_ROM.read_bytes()
     assert hashlib.sha256(source).hexdigest() == REAL_SHA256
     with load('real', source) as db:

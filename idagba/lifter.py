@@ -31,6 +31,7 @@ class _Prototype(MicrocodeFilter):
         super().__init__()
         if '__spoils' not in declaration:
             declaration = declaration.replace('__usercall', SPOILS, 1)
+
         if not self.init(declaration):
             msg = f'Cannot parse BIOS call prototype: {declaration}'
             raise ValueError(msg)

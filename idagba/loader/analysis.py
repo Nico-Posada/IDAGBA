@@ -60,6 +60,7 @@ class PostAnalysis(DatabaseHooks):
         except (LoadError, IdaDomainError) as exc:
             warn(f'Post-analysis stopped: {exc}')
             found = 0
+
         # ponytail: bounded re-runs over analyzed code only; raise _MAX_PASSES for deeper chains.
         if not found or self.passes >= _MAX_PASSES:
             self.unhook()
@@ -211,6 +212,7 @@ class PostAnalysis(DatabaseHooks):
         require(db.xrefs.add_code_ref(site, address, XrefType.CALL_NEAR), f'Cannot add resolved call at {site:#x}')
         if not db.comments.get_at(site):
             db.comments.set_at(site, f'Literal/BX veneer resolves to {address:#010x}')
+
         return True
 
     def _resolve_irq_handlers(self) -> int:
@@ -287,9 +289,11 @@ class PostAnalysis(DatabaseHooks):
 
         if not db.bytes.has_user_name_at(handler):
             db.names.set_name(handler, 'GBA_IrqMain', SetNameFlags.NOWARN | SetNameFlags.FORCE)
+
         require(db.xrefs.add_data_ref(site, handler, XrefType.OFFSET), f'Cannot reference IRQ handler from {site:#x}')
         if not db.comments.get_at(site):
             db.comments.set_at(site, f'Installs ARM BIOS IRQ handler {handler:#010x}')
+
         return True
 
 

@@ -57,6 +57,7 @@ class Annotator:
             require(
                 db.types.apply_declaration_at(ea, declaration, TypeApplyFlags.DEFINITE), f'Cannot apply type at {ea:#x}'
             )
+
         self.name(ea, text)
 
     def apply(self, annotation: HardwareAnnotation, base: int, suffix: str = '') -> None:
@@ -175,6 +176,7 @@ class Annotator:
             lines.append(f'Code pointers: constructors={recovery.constructors:#010x}, main={recovery.main:#010x}')
             lines.extend(recovery.stacks)
             lines.extend(recovery.bss)
+
         self.comment(base, '\n'.join(lines))
         for line in lines:
             log(line)

@@ -30,6 +30,7 @@ def start() -> None:
     directory = _ida_directory()
     if directory is None:
         pytest.skip('no IDA installation: set IDADIR or ~/.idapro/ida-config.json', allow_module_level=True)
+
     user = Path(tempfile.mkdtemp(prefix='idagba-idausr-'))
     atexit.register(shutil.rmtree, user, ignore_errors=True)
     (user / 'plugins').mkdir()

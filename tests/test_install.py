@@ -57,4 +57,5 @@ def test_foreign_file_is_left_alone(tmp_path: Path):
     foreign.write_text('"""Someone else."""\n')
     with pytest.raises(FileExistsError):
         install_loader_link(loaders, target)
+
     assert foreign.read_text() == '"""Someone else."""\n'

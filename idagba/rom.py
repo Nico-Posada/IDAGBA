@@ -56,6 +56,7 @@ def arm_branch_target(word: int, ea: int) -> int | None:
     imm = word & 0xFFFFFF
     if imm & 0x800000:
         imm -= 0x1000000
+
     return ea + 8 + (imm << 2)
 
 
@@ -115,16 +116,22 @@ def header_facts(image: Image) -> HeaderFacts:
     warnings = []
     if rom[0xB2] != 0x96:
         warnings.append(f'fixed header byte is {rom[0xB2]:#04x}, not 0x96 (unfixed header)')
+
     if checksum != rom[0xBD]:
         warnings.append(f'header checksum mismatch: stored {rom[0xBD]:#04x}, computed {checksum:#04x}')
+
     if not logo_matches(rom):
         warnings.append('Nintendo logo is damaged or nonstandard')
+
     if rom[0xB3]:
         warnings.append(f'unexpected unit code {rom[0xB3]:#x}')
+
     if any(rom[0xB5:0xBC]) or any(rom[0xBE:0xC0]):
         warnings.append('nonzero reserved header bytes')
+
     if image.entry_target is None:
         warnings.append(f'unusual or out-of-payload ARM entry instruction; entry remains at {base + entry:#010x}')
+
     return HeaderFacts(
         size=len(rom),
         title=bytes(rom[0xA0:0xAC]),

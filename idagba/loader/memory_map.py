@@ -81,6 +81,7 @@ def _regions(image: Image) -> list[MemoryRegion]:
                     'use DMA3 in 64-bit units. Not linear memory.',
                 )
             )
+
     regions.append(
         MemoryRegion(
             'SAVE',
@@ -104,6 +105,7 @@ def _create(db: Database, region: MemoryRegion) -> None:
     # Changing addressing re-plans the whole segment for analysis, which would analyze the NOAA ROM views.
     if db.segments.get_bitness(segment) != 32:
         db.segments.set_addressing_mode(segment, AddressingMode.BIT32)
+
     db.segments.set_permissions(segment, region.permissions)
     # ida_domain assigns perm on the kernel object without committing it; the SDK requires update() after that.
     segment.update()

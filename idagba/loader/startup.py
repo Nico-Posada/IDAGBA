@@ -74,6 +74,7 @@ def _seed_helpers(annotator: Annotator, recovery: StartupRecovery) -> None:
                 ida_funcs.add_func(address, helpers + 0x28),
                 'Cannot establish CopyMemChk with its CopyMem interior entry',
             )
+
         db.auto_analysis.schedule_function(address)
 
     annotator.name(helpers + 0x16, 'GBA_CopyMem')

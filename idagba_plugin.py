@@ -35,6 +35,7 @@ class IdaGbaPlugmod(ida_idaapi.plugmod_t):
             install_loader_link(Path(ida_diskio.get_user_idadir()) / 'loaders', LOADER_ENTRY)
         except OSError as exc:
             error(f'Cannot install the loader into $IDAUSR/loaders: {exc}')
+
         self._hooks = (_Opened(), _Closing())
         for hook in self._hooks:
             hook.hook()

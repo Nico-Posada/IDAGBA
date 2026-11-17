@@ -37,8 +37,10 @@ def install_loader_link(loaders_dir: Path, target: Path) -> Path:
             return link
 
         link.unlink()  # outdated copy from an earlier version
+
     try:
         link.symlink_to(target)
     except OSError:  # Windows without Developer Mode or administrator rights
         shutil.copyfile(target, link)
+
     return link
