@@ -1,0 +1,146 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_call:
+    secrets:
+      HCLI_API_KEY:
+        required: true
+      IDA_LICENSE_ID:
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  lint:
+    name: Hooks and type check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          enable-cache: true
+
+      - name: Run the pre-commit hooks
+        uses: j178/prek-action@7b101f8338a08d2bd6fdb3625e4e7692428763a3 # v3.1.1
+
+      - name: Type check
+        run: uv run --locked ty check
+
+  test:
+    name: Pure tests on Python ${{ matrix.python }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.11", "3.13"]
+    env:
+      UV_PYTHON: ${{ matrix.python }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          enable-cache: true
+
+      - name: Run the tests that need no IDA
+        run: uv run --locked pytest --ignore=tests/test_native.py
+
+  native:
+    name: Native tests on IDA ${{ matrix.ida }} / Python ${{ matrix.python }}
+    # Secrets are not available to pull requests from forks.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        ida: ["9.1", "latest"]
+        python: ["3.11", "3.13"]
+    env:
+      UV_PYTHON: ${{ matrix.python }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          enable-cache: true
+
+      - name: Install the project
+        run: uv sync --locked
+
+      - name: Install IDA ${{ matrix.ida }}
+        run: |
+          uvx --from ida-hcli hcli \
+            ida install \
+            --download-id "ida-pro:${IDA_VERSION}" \
+            --license-id "${IDA_LICENSE_ID}" \
+            --install-dir "${RUNNER_TEMP}/ida" \
+            --accept-eula \
+            --set-default \
+            --yes
+        env:
+          HCLI_API_KEY: ${{ secrets.HCLI_API_KEY }}
+          IDA_LICENSE_ID: ${{ secrets.IDA_LICENSE_ID }}
+          IDA_VERSION: ${{ matrix.ida }}
+
+      - name: Register the Python interpreter with IDA
+        run: |
+          "${RUNNER_TEMP}/ida/idapyswitch" --force-path "$(
+            uv run --locked python -c \
+              'import pathlib, sysconfig; print(max(pathlib.Path(sysconfig.get_config_var("LIBDIR")).glob("libpython*"), key=lambda p: len(p.name)))'
+          )"
+
+      - name: Run the native tests
+        run: uv run --locked pytest tests/test_native.py
+
+  package:
+    name: Build the plugin archive
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          enable-cache: true
+
+      - name: Build the archive
+        run: |
+          version="$(jq -r .plugin.version ida-plugin.json)"
+          mkdir dist
+          git archive --format=zip --output "dist/idagba-${version}.zip" HEAD \
+            ida-plugin.json idagba_plugin.py idagba loaders sig README.md LICENSE
+          unzip -l "dist/idagba-${version}.zip"
+
+      - name: Lint the archive
+        run: uvx --from ida-hcli hcli plugin lint dist/*.zip
+
+      - name: Upload the archive
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: plugin-archive
+          path: dist/*.zip
+          if-no-files-found: error
