@@ -12,7 +12,7 @@
     "license": "MIT",
     "categories": ["file-parsers-and-loaders", "decompilation"],
     "keywords": ["gba", "game-boy-advance", "arm7tdmi", "loader", "bios"],
-    "urls": {"repository": "https://github.com/Nico-Posada/idagba"},
+    "urls": {"repository": "https://github.com/Nico-Posada/IDAGBA"},
     "authors": [{"name": "Nico Posada", "email": "posadanico@outlook.com"}]
   }
 }
