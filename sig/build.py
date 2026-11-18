@@ -15,6 +15,10 @@ libgba 0.5.4, libtonc 1.4.5, maxmod 1.0.15):
     git clone https://github.com/pret/agbcc && (cd agbcc && ./build.sh)
     docker cp "$(docker create devkitpro/devkitarm)":/opt/devkitpro devkitpro
     uv run sig/build.py "$IDADIR/tools/flair" agbcc devkitpro
+
+Build with the flair tools of IDA 9.2 to 9.4. Their sigmake writes signature format 10, which every
+supported IDA reads. The sigmake of IDA 9.5 writes format 11, and IDA 9.4 and older refuse such a
+file with "unexpected signature file version" and name nothing.
 """
 
 from __future__ import annotations
