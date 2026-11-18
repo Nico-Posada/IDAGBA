@@ -28,7 +28,6 @@ from ida_domain.pseudocode import PseudocodeError, PseudocodeExpression, Pseudoc
 from ida_domain.pseudocode import PseudocodeExpressionOp as Op
 from ida_domain.pseudocode import PseudocodeInstructionOp as InsnOp
 from ida_domain.segments import SegmentPermissions
-from ida_domain.types import TypeAttr
 from ida_domain.xrefs import XrefType
 from packaging.version import Version
 from roms import (
@@ -436,11 +435,11 @@ def test_palette(load: Loader):
         assert palette is not None
         assert db.types.get_details(palette).size == 0x400
         # Inspect each member while the generator still owns the udt_type_data_t its tinfo_t points into.
-        members = []
-        for member in db.types.get_udt_members(palette):
-            element = db.types.get_array_element_type(member.type)
-            unsigned16 = element is not None and TypeAttr.UINT16 in db.types.get_details(element).attributes
-            members.append((member.name, member.offset, db.types.get_array_length(member.type), unsigned16))
+        # The raw tinfo_t calls return by value; ida_domain's element-type helper fails on IDA 9.2.
+        members = [
+            (member.name, member.offset, member.type.get_array_nelems(), member.type.get_array_element().is_uint16())
+            for member in db.types.get_udt_members(palette)
+        ]
 
         assert members == [('BG_PALETTE', 0, 256, True), ('OBJ_PALETTE', 0x200, 256, True)]
 
