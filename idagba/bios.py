@@ -7,6 +7,7 @@ from __future__ import annotations
 
 # Numbers and names taken from https://problemkaputt.de/gbatek.htm#biosfunctions
 # fmt: off
+# ruff: disable[E501]
 BIOS_CALL_NAMES = (
     'SoftReset', 'RegisterRamReset', 'Halt', 'Stop', 'IntrWait', 'VBlankIntrWait', 'Div', 'DivArm',
     'Sqrt', 'ArcTan', 'ArcTan2', 'CpuSet', 'CpuFastSet', 'GetBiosChecksum', 'BgAffineSet', 'ObjAffineSet',
@@ -59,6 +60,7 @@ BIOS_PROTOTYPES = {
     0x29: 'void __usercall SWI_SoundDriverVSyncOn(void);',
     0x2A: 'void __usercall SWI_SoundGetJumpList(void *dst@<R0>);',
 }
+# ruff: enable[E501]
 # fmt: on
 
 
