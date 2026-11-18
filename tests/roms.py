@@ -216,6 +216,36 @@ def make_indirect() -> bytes:
     return bytes(rom)
 
 
+def make_veneers() -> bytes:
+    """Thumb main reaches ARM code in IWRAM through a linker veneer and a Thumb routine through a bx r3 helper.
+
+    That routine adds 2 to r0 and leaves through the same veneer, so the veneer is also the target of a tail jump.
+    """
+    rom = bytearray(make_synthetic()[0])
+    rom[0x700:0x780] = bytes(0x80)
+    struct.pack_into(
+        '<10H',
+        rom,
+        0x700,
+        0xB510,  # push {r4, lr}
+        0x2005,  # movs r0, #5
+        0xF000,  # bl 0x08000730, the veneer
+        0xF814,
+        0x4B02,  # ldr r3, =0x08000741
+        0xF000,  # bl 0x08000720, the bx r3 helper
+        0xF809,
+        0xBC10,  # pop {r4}
+        0xBC02,  # pop {r1}
+        0x4708,  # bx r1
+    )
+    struct.pack_into('<I', rom, 0x714, BASE + 0x741)
+    struct.pack_into('<H', rom, 0x720, 0x4718)  # bx r3
+    # What ld puts in front of ARM code that Thumb code cannot reach: bx pc; b .-2; then ARM ldr pc, [pc, #-4]; target.
+    struct.pack_into('<2H2I', rom, 0x730, 0x4778, 0xE7FD, 0xE51FF004, 0x03000100)
+    struct.pack_into('<2H', rom, 0x740, 0x3002, 0xE7F5)  # adds r0, #2; b 0x08000730
+    return bytes(rom)
+
+
 class LoaderInput:
     def __init__(self, data: bytes | bytearray) -> None:
         self._stream = io.BytesIO(data)

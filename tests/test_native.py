@@ -42,6 +42,7 @@ from roms import (
     make_multiboot,
     make_palette,
     make_synthetic,
+    make_veneers,
 )
 
 if TYPE_CHECKING:
@@ -233,6 +234,15 @@ def helper_calls(cfunc: PseudocodeFunction) -> tuple[list[tuple[str | None, int]
         if expr.op == Op.CALL and expr.x is not None and expr.x.op == Op.HELPER
     ]
     return calls, sum(insn.op == InsnOp.ASM for insn in cfunc.walk_instructions())
+
+
+def call_targets(cfunc: PseudocodeFunction) -> list[int]:
+    """Addresses of the functions the pseudocode calls by name, sorted."""
+    return sorted(
+        target
+        for expr in cfunc.walk_expressions()
+        if expr.op == Op.CALL and expr.x is not None and (target := expr.x.obj_ea) is not None
+    )
 
 
 @pytest.mark.parametrize('file_type', [FORMAT, None], ids=['explicit', 'auto'])
@@ -537,6 +547,18 @@ def test_indirect(load: Loader):
         assert db.types.get_func_argument_count(function_type) == 1, str(cfunc)
 
 
+def test_veneer_calls(load: Loader):
+    with load('veneers', make_veneers()) as db:
+        check_entry(db)
+        # IDA makes each stub a function of its own: the helper, the two halves of the veneer, the routine.
+        for ea in (0x08000720, 0x08000730, 0x08000734, 0x08000740):
+            assert function_start(db, ea) == ea
+
+        # The lifter shows every call at the code it reaches instead of at the stub in between.
+        assert call_targets(decompile(db, 0x08000700)) == [0x03000100, 0x08000740]
+        assert call_targets(decompile(db, 0x08000740)) == [0x03000100]
+
+
 def test_real(load: Loader):
     if not REAL_ROM.is_file():
         pytest.skip(f'{REAL_ROM} is missing; set IDAGBA_REAL_ROM')
@@ -584,3 +606,8 @@ def test_real(load: Loader):
 
         for ea in (0x08000870, 0x08012B20, 0x030018DC):
             decompile(db, ea)
+
+        # A linker veneer into IWRAM, bx r3 helpers and an ARM tail jump through a veneer, each shown as its callee.
+        assert call_targets(decompile(db, 0x08012BE8)) == [0x030013B8]
+        assert {0x030016D0, 0x030018DC} <= set(call_targets(decompile(db, 0x08003BC8)))
+        assert 0x08015F3C in call_targets(decompile(db, 0x03000A7C))
