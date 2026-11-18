@@ -76,7 +76,7 @@ WORKSPACE = (
         4,
         'GBA_IRQ_HANDLER',
         'void (* volatile value)(void);',
-        'BIOS IRQ dispatch pointer: handler executes in ARM state. Value unknown.',
+        'BIOS IRQ dispatch pointer: handler executes in ARM state.',
     ),
 )
 

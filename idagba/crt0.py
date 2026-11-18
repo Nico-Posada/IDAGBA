@@ -38,14 +38,6 @@ class StartupCopy:
 
 
 @dataclass(frozen=True, slots=True)
-class Note:
-    """A recovered fact for the load report, also a comment at address when it has one."""
-
-    text: str
-    address: int | None = None
-
-
-@dataclass(frozen=True, slots=True)
 class StartupRecovery:
     """What a validated stock startup tells about its image.
 
@@ -59,7 +51,6 @@ class StartupRecovery:
     copies: tuple[StartupCopy, ...]
     constructors: int
     main: int
-    notes: tuple[Note, ...]
     reserved: tuple[tuple[int, int], ...]
 
 
@@ -111,7 +102,6 @@ def _recover(crt0: Crt0, base: int) -> StartupRecovery:
         copies=tuple(copies),
         constructors=pool.libc_init_array,
         main=pool.main,
-        notes=tuple(_notes(pool, start)),
         reserved=tuple(reserved),
     )
 
@@ -168,8 +158,8 @@ class Crt0:
     # The assembled startup code and the offset of ClearMem in it
     REVISIONS: ClassVar[tuple[tuple[bytes, int], ...]] = (
         (
-            # (current)
             # https://github.com/devkitPro/devkitarm-crtls/blob/333d62c/gba_crt0.s#L58-L253
+            # ^ (current)
             bytes.fromhex("""
                 01 03 A0 E3 08 02 80 E5 12 00 A0 E3 00 F0 29 E1
                 B8 D0 9F E5 1F 00 A0 E3 00 F0 29 E1 B0 D0 9F E5
@@ -188,8 +178,8 @@ class Crt0:
             0xA8,
         ),
         (
-            # (no SoftReset after main)
             # https://github.com/devkitPro/devkitarm-crtls/blob/eac1e8c/gba_crt0.s#L58-L250
+            # ^ (no SoftReset after main)
             bytes.fromhex("""
                 01 03 A0 E3 08 02 80 E5 12 00 A0 E3 00 F0 29 E1
                 B8 D0 9F E5 1F 00 A0 E3 00 F0 29 E1 B0 D0 9F E5
@@ -343,28 +333,6 @@ def _check_copies(
         destinations.append(destination)
 
     return sources
-
-
-def _notes(pool: LiteralPool, start: int) -> list[Note]:
-    """Stack tops and zero-filled ranges, when the pool holds plausible ones."""
-    # Offsets of the two `ldr sp` instructions in
-    # https://github.com/devkitPro/devkitarm-crtls/blob/333d62c/gba_crt0.s#L65-L68
-    ldr_sp_irq, ldr_sp_usr = 0x10, 0x1C
-    notes = []
-    for mode, top, load in (('IRQ', pool.sp_irq, ldr_sp_irq), ('system', pool.sp_usr, ldr_sp_usr)):
-        if top % 4 == 0 and BASE_IWRAM <= top <= BASE_IWRAM + SIZE_IWRAM:
-            notes.append(Note(f'Stock crt0 {mode} stack hint: SP={top:#010x}', start + load))
-
-    # The startup zero-fills both ranges at run time, so the image holds no bytes for them.
-    for name, lo, hi, base, size in (
-        ('BSS', pool.bss_start, pool.bss_end, BASE_IWRAM, SIZE_IWRAM),
-        ('SBSS', pool.sbss_start, pool.sbss_end, BASE_EWRAM, SIZE_EWRAM),
-    ):
-        if lo % 4 == hi % 4 == 0 and base <= lo <= hi <= base + size:
-            text = f'{name} cleared at runtime: [{lo:#010x}, {hi:#010x}); bytes remain unknown in static IDB'
-            notes.append(Note(text, lo if lo < hi else None))
-
-    return notes
 
 
 def code_pointer(

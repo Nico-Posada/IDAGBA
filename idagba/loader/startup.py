@@ -26,13 +26,7 @@ def apply_recovery(annotator: Annotator, recovery: StartupRecovery | StartupReco
         offset = source - recovery.base
         annotator.db.bytes.set_bytes_at(dest, rom[offset : offset + size])
         annotator.data(source, size, 1, copy.name)
-        text = f'Stock crt0 copy: {source:#010x} -> {dest:#010x}, {size:#x} bytes; RAM remains mutable'
-        annotator.comment(source, text)
-        annotator.comment(dest, text)
-
-    for note in recovery.notes:
-        if note.address is not None:
-            annotator.comment(note.address, note.text)
+        annotator.comment(source, f'Stock crt0 copy: {source:#010x} -> {dest:#010x}, {size:#x} bytes')
 
 
 def seed_analysis(annotator: Annotator, recovery: StartupRecovery | StartupRecoveryFailure) -> None:

@@ -1,11 +1,6 @@
 """Naming and typing primitives, hardware annotations and the load report.
 
 Cartridges whose bytes 0xC4..0xC9 are zero get volatile GPIO port items.
-
-Palette RAM is GBA_PALETTE, a named GBA_PaletteRAM struct containing 256-entry
-BG_PALETTE and OBJ_PALETTE unsigned-short arrays. Colors use BGR555; BG entry 0
-is the backdrop. Applying the type leaves all 0x400 bytes uninitialized and writable.
-OAM is GBA_OAM, 128 GBA_OAMEntry records whose fourth halfwords form affine matrices.
 """
 
 from __future__ import annotations
@@ -86,31 +81,21 @@ class Annotator:
         self._bios_workspace()
 
     def _header(self) -> None:
-        rom, base = self.image.rom, self.image.base
+        base = self.image.base
         for view, suffix in self.image.views:
             for annotation in HEADER_FIELDS:
                 self.apply(annotation, view, suffix)
-                if annotation.declaration:
-                    self.comment(
-                        view + annotation.offset, repr(rom[annotation.offset : annotation.offset + annotation.size])
-                    )
 
         if self.image.multiboot:
             for offset, field in ((0xC4, 'GBA_MB_BOOT_MODE'), (0xC5, 'GBA_MB_SLAVE_ID')):
                 self.data(base + offset, 1, 1, field, declaration='volatile unsigned char value;')
-                self.comment(base + offset, 'Multiboot header field; the BIOS overwrites it before entry')
 
     def _cartridge_ports(self) -> None:
         rom, base = self.image.rom, self.image.base
         # GBATEK: carts with the ROM-chip I/O port keep these six bytes zero-filled.
         if not self.image.multiboot and len(rom) >= 0xCA and not any(rom[0xC4:0xCA]):
-            for offset, port, text in (
-                (0xC4, 'GBA_GPIO_DATA', 'Cartridge I/O port data, bits 0..3 (RTC/solar/gyro/rumble on some carts)'),
-                (0xC6, 'GBA_GPIO_DIRECTION', 'Cartridge I/O port direction, bits 0..3 (0=input, 1=output)'),
-                (0xC8, 'GBA_GPIO_CONTROL', 'Cartridge I/O port control: bit 0 enables reads (0=write-only)'),
-            ):
+            for offset, port in ((0xC4, 'GBA_GPIO_DATA'), (0xC6, 'GBA_GPIO_DIRECTION'), (0xC8, 'GBA_GPIO_CONTROL')):
                 self.data(base + offset, 2, 2, port, declaration='volatile unsigned short value;')
-                self.comment(base + offset, text)
 
         eeprom = self.db.segments.get_by_name('EEPROM')
         if eeprom:
@@ -163,26 +148,18 @@ class Annotator:
             for annotation in WORKSPACE:
                 self.apply(annotation, workspace_base, suffix)
 
-        for offset, text in (
-            (0x7F00, 'BIOS default IRQ stack area, 160 bytes (SP_irq starts at 0x03007FA0)'),
-            (0x7FA0, 'BIOS default supervisor stack area, 64 bytes (SP_svc starts at 0x03007FE0)'),
-            (0x7FE0, 'BIOS reserved area, 16 bytes'),
-            (0x7FF4, 'BIOS reserved area, 4 bytes'),
-        ):
-            self.comment(BASE_IWRAM + offset, text)
-
     def report(self, facts: HeaderFacts, recovery: StartupRecovery | StartupRecoveryFailure) -> None:
         base = self.image.base
         kind = 'multiboot image' if self.image.multiboot else 'cartridge'
 
-        def brepr(s: bytes):
+        def brepr(s: bytes) -> str:
             return repr(s)[1:]
 
         lines = [
             f'GBA {kind}: {facts.size} bytes at {base:#010x}',
-            f'Title: {brepr(facts.title.strip(b"\0"))!s}',
-            f'Game: {brepr(facts.game_code.rstrip(b"\0"))!s}',
-            f'Maker: {brepr(facts.maker)!s}',
+            'Title: ' + brepr(facts.title.strip(b'\0')),
+            'Game: ' + brepr(facts.game_code.rstrip(b'\0')),
+            'Maker: ' + brepr(facts.maker),
         ]
 
         if facts.unit:
@@ -210,8 +187,6 @@ class Annotator:
                 f'{copy.name}: {copy.source:#010x} -> {copy.destination:#010x}, {copy.size:#x} bytes'
                 for copy in recovery.copies
             )
-            lines.append(f'Code pointers: constructors={recovery.constructors:#010x}, main={recovery.main:#010x}')
-            lines.extend(note.text for note in recovery.notes)
 
         self.comment(base, '\n'.join(lines))
         for line in lines:

@@ -304,10 +304,10 @@ def test_synthetic(load: Loader, file_type: str | None):
             (0x08000870, 0x03002100, 'GBA_IWRAM0_LMA'),
         ):
             named(db, source, lma_name)
-            for address in (source, destination):
-                provenance = repeatable_comment(db, address)
-                assert f'{source:#010x}' in provenance
-                assert f'{destination:#010x}' in provenance
+            provenance = repeatable_comment(db, source)
+            assert f'{source:#010x}' in provenance
+            assert f'{destination:#010x}' in provenance
+            assert not repeatable_comment(db, destination)
 
         named(db, 0x0C000000 + 0xA0, 'GBA_HDR_TITLE_WS2')
         assert db.functions.get_at(0x0A000000) is None
