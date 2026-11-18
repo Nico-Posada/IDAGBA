@@ -24,7 +24,7 @@ from ida_domain import Database
 from ida_domain.base import DatabaseError
 from ida_domain.comments import CommentKind
 from ida_domain.database import IdaCommandOptions
-from ida_domain.pseudocode import PseudocodeExpression, PseudocodeFunction, PseudocodeInstruction
+from ida_domain.pseudocode import PseudocodeError, PseudocodeExpression, PseudocodeFunction, PseudocodeInstruction
 from ida_domain.pseudocode import PseudocodeExpressionOp as Op
 from ida_domain.pseudocode import PseudocodeInstructionOp as InsnOp
 from ida_domain.segments import SegmentPermissions
@@ -146,6 +146,17 @@ def type_text(db: Database, ea: int) -> str:
 def show_instructions(db: Database, *addresses: int) -> None:
     for ea in addresses:
         assert db.bytes.get_disassembly_at(ea), hex(ea)
+
+
+def decompile(db: Database, ea: int) -> PseudocodeFunction:
+    """Decompile, or skip the rest of the test when the IDA licence has no 32-bit ARM decompiler."""
+    try:
+        return db.pseudocode.decompile(ea)
+    except PseudocodeError as exc:
+        if 'LICENSE' in str(exc):
+            pytest.skip(f'no ARM decompiler licence; the checks before this point passed ({exc})')
+
+        raise
 
 
 def check_entry(db: Database, *, multiboot: bool = False) -> None:
@@ -392,8 +403,8 @@ def test_synthetic(load: Loader, file_type: str | None):
         assert db.heads.bounds(0x07000000)[1] == 0x07000400
         assert regular_comment(db, 0x080002E6) == 'BIOS SWI 0x00 SoftReset'
 
-        main = db.pseudocode.decompile(0x08000700)
-        db.pseudocode.decompile(0x03000100)
+        main = decompile(db, 0x08000700)
+        decompile(db, 0x03000100)
         assert hardware_loop(main), 'Loop no longer polls VCOUNT on each iteration'
         assert ram_write(main, 0x03002000), 'Initialized RAM was incorrectly folded as constant'
 
@@ -443,7 +454,7 @@ def test_palette(load: Loader):
         assert found is not None
         assert found.perm == SegmentPermissions.READ | SegmentPermissions.WRITE
         assert found.type == ida_segment.SEG_DATA
-        writes = palette_writes(db.pseudocode.decompile(0x08000700))
+        writes = palette_writes(decompile(db, 0x08000700))
         assert writes == {(0, 0): 20903, (0, 241): 0x7FFF, (0x200, 0): 0x7FFF, (0x200, 255): 0x7FFF}, writes
 
 
@@ -456,7 +467,7 @@ def test_thumb_long_jump(load: Loader):
         assert ida_frame.get_spd(function, 0x08000F20) == -24
         assert has_xref(db, 0x08000708, 0x08000F20, XrefType.JUMP_NEAR)
         show_instructions(db, 0x08000700, 0x08000708, 0x08000F20)
-        db.pseudocode.decompile(0x08000700)
+        decompile(db, 0x08000700)
 
 
 def test_large(load: Loader):
@@ -511,14 +522,14 @@ def test_indirect(load: Loader):
             (0x08000700, [('SWI_VBlankIntrWait', 0)]),
             (0x08000940, [('SWI_Div', 2), ('HIDWORD', 1)]),
         ):
-            calls, asm = helper_calls(db.pseudocode.decompile(ea))
+            calls, asm = helper_calls(decompile(db, ea))
             assert calls == expected, (hex(ea), calls)
             assert not asm, hex(ea)
 
         # Halt leaves every register unchanged, so r0 stays live from entry and remains an argument.
         ida_segregs.split_sreg_range(0x08000960, ida_idp.str2reg('T'), 1, ida_segregs.SR_user)
         assert db.functions.create(0x08000960)
-        cfunc = db.pseudocode.decompile(0x08000960)
+        cfunc = decompile(db, 0x08000960)
         calls, asm = helper_calls(cfunc)
         assert calls == [('SWI_Halt', 0)]
         assert not asm
@@ -573,4 +584,4 @@ def test_real(load: Loader):
             assert clue in entry_comment
 
         for ea in (0x08000870, 0x08012B20, 0x030018DC):
-            db.pseudocode.decompile(ea)
+            decompile(db, ea)
