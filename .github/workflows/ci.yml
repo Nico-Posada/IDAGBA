@@ -70,7 +70,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        ida: ["9.1", "latest"]
+        # 9.1 is the oldest supported release; 9.2 is the first where every test can run.
+        ida: ["9.1", "9.2", "latest"]
         python: ["3.11", "3.13"]
     env:
       UV_PYTHON: ${{ matrix.python }}
