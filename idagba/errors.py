@@ -1,10 +1,10 @@
-"""Loader failure signaling shared by the pure checks and the IDA-side loader."""
+"""The error the loader raises for bad input or a failed IDA call."""
 
 from __future__ import annotations
 
 
 class LoadError(Exception):
-    """An expected invalid input or failed required IDA operation."""
+    """Bad input, or an IDA call that had to work and did not."""
 
 
 def require(ok: object, message: str) -> None:

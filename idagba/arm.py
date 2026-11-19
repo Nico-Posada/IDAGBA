@@ -1,4 +1,4 @@
-"""ARM7TDMI state on top of the raw SDK: ida_domain has no segment-register API."""
+"""Thumb state helpers. They use the raw SDK because ida_domain has no segment register API."""
 
 from __future__ import annotations
 
@@ -21,8 +21,12 @@ def thumb_state(ea: int) -> int:
 
 
 def set_thumb(ea: int, thumb: int) -> None:
+    # the T segment register is 0 for ARM and 1 for Thumb
     register = ida_idp.str2reg('T')
-    require(register >= 0, 'ARM processor does not expose T state')
+    require(
+        register >= 0,
+        'ARM processor does not expose T state',
+    )
     require(
         ida_segregs.split_sreg_range(ea, register, thumb, ida_segregs.SR_auto),
         f'Cannot establish T={thumb} at {ea:#x}',

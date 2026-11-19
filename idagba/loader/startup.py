@@ -1,4 +1,4 @@
-"""Apply a recovered crt0 to the database and seed analysis from the entry and startup code."""
+"""Applies the startup recovery to the database and tells IDA where the code starts."""
 
 from __future__ import annotations
 
@@ -24,7 +24,11 @@ def apply_recovery(annotator: Annotator, recovery: StartupRecovery | StartupReco
     for copy in recovery.copies:
         source, dest, size = copy.source, copy.destination, copy.size
         offset = source - recovery.base
+
+        # do the startup's copy into RAM
         annotator.db.bytes.set_bytes_at(dest, rom[offset : offset + size])
+
+        # label the source as data
         annotator.data(source, size, 1, copy.name)
         annotator.comment(source, f'Stock crt0 copy: {source:#010x} -> {dest:#010x}, {size:#x} bytes')
 
@@ -39,7 +43,11 @@ def seed_analysis(annotator: Annotator, recovery: StartupRecovery | StartupRecov
 def _seed_entry(annotator: Annotator) -> None:
     db, image = annotator.db, annotator.image
     entry = image.entry
+
+    # entry runs in ARM state
     set_thumb(entry, 0)
+
+    # register it as the entry point
     require(ida_ida.inf_set_start_cs(0) and ida_ida.inf_set_start_ea(entry), 'Cannot establish flat entry address')
     db.start_ip = entry
     require(
@@ -47,27 +55,36 @@ def _seed_entry(annotator: Annotator) -> None:
         'Cannot add image entry',
     )
     db.auto_analysis.schedule_function(entry)
+
+    # name the branch target
     target = image.entry_target
     if target is not None:
         annotator.name(target, 'GBA_STARTUP')
 
 
 def _seed_helpers(annotator: Annotator, recovery: StartupRecovery) -> None:
-    """Name the memory helpers behind the crt0 body and make each a function."""
+    """Name the helper routines after the startup code and make them functions."""
     db = annotator.db
     start = recovery.start
     set_thumb(start, 0)
-    # The startup enters Thumb state after ten ARM instructions.
-    set_thumb(start + 0x28, 1)
-    # Offsets from ClearMem taken from
+
+    # startup enters Thumb state after ten ARM instructions (4 bytes for each insn)
+    set_thumb(start + (4 * 10), 1)
+
+    # the helpers linked here end up at these offsets from ClearMem once assembled
     # https://github.com/devkitPro/devkitarm-crtls/blob/333d62c/gba_crt0.s#L194-L253
     helpers = recovery.clear_mem
     for delta, routine in ((0, 'GBA_ClearMem'), (0x12, 'GBA_BxR3'), (0x14, 'GBA_CopyMemChk')):
         address = helpers + delta
         set_thumb(address, 1)
         annotator.name(address, routine)
+
+        # CopyMemChk falls through into CopyMem, so they are one function
         if delta == 0x14:
-            require(db.instructions.create(address) == 2, 'Cannot decode CopyMemChk')
+            require(
+                db.instructions.create(address) == 2,
+                'Cannot decode CopyMemChk',
+            )
             require(
                 ida_funcs.add_func(address, helpers + 0x28),
                 'Cannot establish CopyMemChk with its CopyMem interior entry',
@@ -75,23 +92,28 @@ def _seed_helpers(annotator: Annotator, recovery: StartupRecovery) -> None:
 
         db.auto_analysis.schedule_function(address)
 
+    # CopyMem is a second entry into it
     annotator.name(helpers + 0x16, 'GBA_CopyMem')
 
 
 def _seed_calls(annotator: Annotator, recovery: StartupRecovery) -> None:
-    """Schedule the two routines crt0 calls through r3 and reference them from their call sites."""
+    """Name the two routines the startup calls through r3 and link the calls to them."""
     db = annotator.db
     start = recovery.start
-    # Offsets of the two `bl _blx_r3_stub` call sites taken from
+
+    # the two `bl _blx_r3_stub` calls linked here end up at these offsets from start_vector once assembled
     # https://github.com/devkitPro/devkitarm-crtls/blob/333d62c/gba_crt0.s#L176-L184
     for pointer, routine, callsite in (
         (recovery.constructors, '__libc_init_array', 0x98),
         (recovery.main, 'main', 0xA2),
     ):
+        # bit 0 is the thumb flag
         address = pointer & ~1
         set_thumb(address, pointer & 1)
         annotator.name(address, routine)
         db.auto_analysis.schedule_function(address)
+
+        # link the bx r3 call to its target
         require(
             db.instructions.create(start + callsite) == 4,
             f'Cannot decode proven Thumb callsite at {start + callsite:#x}',

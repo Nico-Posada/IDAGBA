@@ -1,13 +1,15 @@
-"""Hex-Rays lifters that turn BIOS calls and calls through veneers into normal calls.
+"""Decompiler hooks that show BIOS calls and calls through stubs as normal calls.
 
-BIOS calls, lifted from the SVC instruction:
+BIOS calls
 Off: __asm { SVC 0xC }
 On:  SWI_CpuFastSet(src, dst, mode)
 
-Veneer calls, retargeted in the generated microcode before the decompiler analyzes any call:
-Off: sub_8017890(dst, 0, 12)    a bx pc veneer the linker placed in front of ARM code in IWRAM
+Calls through a linker veneer
+Off: sub_8017890(dst, 0, 12)
 On:  sub_30013B8(dst, 0, 12)
-Off: sub_80015B2(a, b)          bx r5, with the callee loaded into r5 by the caller
+
+Calls through a bx rN helper
+Off: sub_80015B2(a, b, sub_3000024) => a3(a1, a2)
 On:  sub_3000024(a, b)
 """
 
@@ -35,7 +37,7 @@ _installed: tuple[_BiosCalls, _VeneerCalls] | None = None
 
 
 def install() -> bool:
-    """Install the lifters for the open database; False when the decompiler is missing."""
+    """Install the hooks for the open database. Returns False when there is no decompiler."""
     global _installed
     if _installed:
         return True
@@ -48,6 +50,8 @@ def install() -> bool:
     bios.install()
     veneers.hook()
     _installed = bios, veneers
+
+    # drop pseudocode that was made without the hooks
     ida_hexrays.clear_cached_cfuncs()
     return True
 
@@ -61,6 +65,8 @@ def uninstall() -> None:
     bios.uninstall()
     veneers.unhook()
     _installed = None
+
+    # drop pseudocode that was made with the hooks
     ida_hexrays.clear_cached_cfuncs()
 
 
@@ -86,7 +92,8 @@ class _Prototype(MicrocodeFilter):
 
     def __init__(self, declaration: str) -> None:
         super().__init__()
-        # A call that does not list what it clobbers is assumed to clobber R0-R3, as in libtonc.
+
+        # a call clobbers r0-r3 unless its prototype says otherwise, as in libtonc
         if '__spoils' not in declaration:
             declaration = declaration.replace('__usercall', '__usercall __spoils<R0,R1,R2,R3>', 1)
 
@@ -95,30 +102,30 @@ class _Prototype(MicrocodeFilter):
             raise ValueError(msg)
 
     def match(self, cdg: codegen_t) -> bool:
-        # _BiosCalls has already matched the instruction.
+        # _BiosCalls already matched the instruction
         return True
 
 
+# TODO(2026-11-19): This hooks Hex-Rays directly because ida_domain's DecompilerHooks is slow and makes IDA print a
+# TypeError on every decompilation. Update to use ida_domain's wrapper when that's fixed.
 class _VeneerCalls(ida_hexrays.Hexrays_Hooks):
-    """Point each call that goes through a stub at the code the stub reaches.
-
-    Not ida_domain's DecompilerHooks: it sends every decompiler event through Python, which costs more time than
-    this hook itself, and its collect_warnings makes IDA print a TypeError on every decompilation.
-    """
+    """Point each call that goes through a stub at the code the stub reaches."""
 
     def __init__(self, db: Database) -> None:
         super().__init__()
         self.db = db
 
     def microcode(self, mba: mba_t) -> int:
+        # runs on the fresh microcode of a function, before the decompiler looks at its calls
         for insn in MicroBlockArray(mba).instructions():
+            # only calls and jumps to a fixed address
             callee = insn.l.global_address
             if callee is None or insn.opcode not in (MicroOpcode.CALL, MicroOpcode.GOTO):
                 continue
 
             target = self._behind_thunks(callee)
             if insn.opcode == MicroOpcode.GOTO:
-                # A jump to another function decompiles as a tail call; a jump to a mere label would not.
+                # only retarget a jump that lands on a function, so it decompiles as a tail call
                 if target != callee and self._function(target) is not None:
                     insn.l.set_global_addr(target, insn.l.size)
 
@@ -126,26 +133,31 @@ class _VeneerCalls(ida_hexrays.Hexrays_Hooks):
 
             register = self._bx_register(target)
             if register is not None:
-                # bl to a lone bx rN is an indirect call through rN; the decompiler then follows the register.
+                # make it an indirect call through rN, which the decompiler resolves itself
                 insn.opcode = MicroOpcode.ICALL
+
+                # icall takes the segment in l and the target in r
                 insn.l.set_register(reg2mreg(ida_idp.str2reg('CS')), 2)
                 insn.r.set_register(reg2mreg(register), 4)
             elif target != callee:
+                # point the call at the end of the thunk chain
                 insn.l.set_global_addr(target, insn.l.size)
 
         return ida_hexrays.MERR_OK
 
     def _behind_thunks(self, ea: int) -> int:
-        """Where a call to ea ends up after every thunk with a fixed target on the way."""
+        """Follow the thunks from ea to the code they end at."""
         seen = set()
         while ea not in seen:
             seen.add(ea)
             function = self._function(ea)
-            # Not db.functions.get_flags: it raises on IDA 9.5's FUNC_OVERSIZED, which ida_domain 0.6 lacks.
+
+            # TODO(2026-11-19): db.functions.get_flags raises on IDA 9.5's FUNC_OVERSIZED,
+            # so update to ida_domain's wrapper when that's fixed
             if function is None or not function.flags & ida_funcs.FUNC_THUNK:
                 break
 
-            # IDA returns (target, address of the pointer it read); its stub claims a plain int.
+            # this returns a (target, pointer address) pair, though its type stub says int
             target, _ = ida_funcs.calc_thunk_func_target(function)  # ty: ignore[not-iterable]
             if target == ida_idaapi.BADADDR:
                 break
@@ -155,20 +167,23 @@ class _VeneerCalls(ida_hexrays.Hexrays_Hooks):
         return ea
 
     def _bx_register(self, ea: int) -> int | None:
-        """The register of a function that is one `bx rN`: libgcc's _call_via_rN, crt0's GBA_BxR3."""
+        """The register rN when the function at ea is only `bx rN`, like libgcc's _call_via_rN."""
         function = self._function(ea)
         insn = self.db.instructions.get_at(ea) if function is not None else None
+
+        # the whole function must be the one bx instruction
         if function is None or insn is None or insn.itype != ida_allins.ARM_bx or ea + insn.size != function.end_ea:
             return None
 
         operand = self.db.instructions.get_operand(insn, 0)
-        # bx lr is a return and bx pc a mode switch; neither holds a callee.
+
+        # bx lr is a return and bx pc a mode switch, so neither is a call
         if not isinstance(operand, RegisterOperand) or operand.register_number >= ida_idp.str2reg('SP'):
             return None
 
         return operand.register_number
 
     def _function(self, ea: int) -> func_t | None:
-        """The function that starts at ea; ea is whatever a call held and may be unmapped."""
+        """The function that starts at ea, if there is one."""
         function = self.db.functions.get_at(ea) if self.db.is_valid_ea(ea) else None
         return function if function is not None and function.start_ea == ea else None

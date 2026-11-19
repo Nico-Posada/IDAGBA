@@ -1,4 +1,4 @@
-"""GBA memory map constants and the register, header and BIOS workspace annotation tables."""
+"""The GBA memory map and the tables of registers, header fields and BIOS variables."""
 
 from __future__ import annotations
 

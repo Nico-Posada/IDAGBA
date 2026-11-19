@@ -1,10 +1,7 @@
-"""Post-analysis passes that extend IDA's native ARM analysis.
+"""Passes that run after IDA's own analysis.
 
-After normal analysis, bounded passes (re-run on auto_empty until nothing new, at most four)
-follow only analyzed code: shared Thumb literal/BX veneers (per call site, into the image or a
-verified RAM copy), constant ARM handlers stored to the BIOS IRQ vector (register tracker), and
-BIOS SWI numbers (comments only). Constant-register BX calls such as ldr/mov lr,pc/bx are
-already resolved by IDA's ARM module. Overlays and decompression are left to the analyst.
+Each pass names BIOS calls, links calls through bx veneers to their targets and finds the IRQ handler.
+The passes repeat while they find new code, four times at most.
 """
 
 from __future__ import annotations
@@ -42,6 +39,8 @@ def schedule_post_analysis(db: Database, image: Image, recovery: StartupRecovery
     global _pending
     recovered = isinstance(recovery, StartupRecovery)
     copies = recovery.copies if recovered else ()
+
+    # without a startup only the header is known data
     reserved = recovery.reserved if recovered else ((image.base, image.base + HEADER_SIZE),)
     _pending = PostAnalysis(db, (image.base, image.end), copies, reserved)
     _pending.hook()
@@ -49,7 +48,7 @@ def schedule_post_analysis(db: Database, image: Image, recovery: StartupRecovery
 
 
 class PostAnalysis(DatabaseHooks):
-    """Re-run native-analysis extensions on auto_empty until a pass resolves nothing new."""
+    """Runs the passes each time IDA's analysis queue empties, until a pass finds nothing new."""
 
     MAX_PASSES = 4
 
@@ -65,6 +64,7 @@ class PostAnalysis(DatabaseHooks):
         self.passes = 0
 
     def auto_empty(self) -> None:
+        # called when IDA's analysis queue is empty
         global _pending
         self.passes += 1
         try:
@@ -84,7 +84,7 @@ class PostAnalysis(DatabaseHooks):
         _pending = None
 
     def _run_pass(self) -> int:
-        """One pass over the analyzed code; the number of new code references it proved."""
+        """Run one pass and return how many new code references it added."""
         swis = self._annotate_swis()
         branches = self._resolve_veneers()
         handlers = self._resolve_irq_handlers()
@@ -115,9 +115,9 @@ class PostAnalysis(DatabaseHooks):
         return count
 
     def _resolve_veneers(self) -> int:
-        """Shared Thumb BX veneers: the register differs per caller, so resolve at each call site.
+        """Link calls through Thumb bx veneers to their targets.
 
-        Constant-register BX (e.g. ldr r1,=main; mov lr,pc; bx r1) is resolved natively by IDA's ARM module.
+        Several callers share one veneer, so each call site is resolved on its own.
         """
         db = self.db
         count = 0
@@ -127,6 +127,7 @@ class PostAnalysis(DatabaseHooks):
             if function is None or first is None:
                 continue
 
+            # a veneer is bx rN, or ldr rN then bx rN
             branch = first if first.itype == ida_allins.ARM_bx else self._decode(ea + first.size)
             if branch is None or branch.itype != ida_allins.ARM_bx or branch.ea + branch.size != function.end_ea:
                 continue
@@ -135,6 +136,7 @@ class PostAnalysis(DatabaseHooks):
             if not isinstance(target, RegisterOperand):
                 continue
 
+            # for a lone bx, the caller loads rN right before the call
             for call in list(db.xrefs.calls_to_ea(ea)):
                 load = first if branch is not first else self._decode(db.heads.get_previous(call))
                 if branch is first and (
@@ -151,7 +153,7 @@ class PostAnalysis(DatabaseHooks):
         return count
 
     def _literal(self, load: insn_t | None, reg: int) -> int | None:
-        """Value loaded by `ldr reg, =literal` from a pool inside the image or a RAM copy."""
+        """The value that `ldr reg, =literal` loads, if its pool is in the image or a RAM copy."""
         db = self.db
         if load is None or load.itype != ida_allins.ARM_ldr:
             return None
@@ -179,7 +181,7 @@ class PostAnalysis(DatabaseHooks):
         return db.bytes.get_dword_at(pool, allow_uninitialized=True)
 
     def _link_call(self, site: int, pointer: int) -> bool:
-        """Add a proven call reference from site; True only when it is new."""
+        """Add a call reference from site to the pointer's target. Returns True when it is new."""
         db = self.db
         address = self._claim(site, pointer)
         if address is None:
@@ -193,7 +195,7 @@ class PostAnalysis(DatabaseHooks):
         return True
 
     def _resolve_irq_handlers(self) -> int:
-        """Constant ARM handlers stored to the BIOS IRQ vector near a load of its address."""
+        """Find the handlers that code stores into the BIOS IRQ vector."""
         db = self.db
         count = 0
         # The BIOS IRQ handler pointer, at its own address and through the IWRAM mirror.
@@ -222,7 +224,7 @@ class PostAnalysis(DatabaseHooks):
         return count
 
     def _vector_loads(self, vector: int) -> set[int]:
-        """Instructions that reference the vector directly or through a literal pool entry."""
+        """Instructions that refer to the vector, directly or through a literal pool."""
         db = self.db
         loads = set()
         for xref in db.xrefs.to_ea(vector):
@@ -234,7 +236,7 @@ class PostAnalysis(DatabaseHooks):
         return loads
 
     def _stored_handler(self, insn: insn_t, vector: int) -> int | None:
-        """Constant ARM pointer that `str handler, [reg, #displacement]` writes to the vector."""
+        """The handler address that a `str` instruction writes to the vector, if it does."""
         db = self.db
         if insn.itype != ida_allins.ARM_str:
             return None
@@ -252,6 +254,7 @@ class PostAnalysis(DatabaseHooks):
         if phrase is None or displacement is None:
             return None
 
+        # base + displacement must be the vector
         target = ida_regfinder.find_reg_value(insn.ea, phrase)
         if target is None or (target + displacement) & 0xFFFFFFFF != vector:
             return None
@@ -260,7 +263,7 @@ class PostAnalysis(DatabaseHooks):
         return None if handler is None or handler % 4 else handler
 
     def _install_irq_handler(self, site: int, handler: int) -> bool:
-        """Reference and name the handler that site installs; True only when it is new."""
+        """Name the handler and reference it from site. Returns True when it is new."""
         db = self.db
         if self._claim(site, handler) is None:
             return False
@@ -275,7 +278,7 @@ class PostAnalysis(DatabaseHooks):
         return True
 
     def _claim(self, site: int, pointer: int) -> int | None:
-        """Schedule the code behind a proven pointer; its address, or None when site already references it."""
+        """Schedule code at the pointer's target and return its address, or None when nothing is new."""
         db = self.db
         address = pointer & ~1
         if not code_pointer(pointer, self.image, self.copies, self.reserved) or any(
@@ -283,9 +286,11 @@ class PostAnalysis(DatabaseHooks):
         ):
             return None
 
+        # don't turn data into code
         if db.bytes.is_data_at(address) or db.bytes.is_tail_at(address):
             return None
 
+        # existing code must match the thumb bit
         if db.bytes.is_code_at(address):
             if arm.thumb_state(address) != pointer & 1:
                 return None

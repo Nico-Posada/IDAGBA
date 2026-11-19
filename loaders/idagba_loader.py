@@ -1,7 +1,7 @@
-"""IDA loader entry for idagba; $IDAUSR/loaders/ resolves here because IDA scans only loaders/ directories.
+"""The loader file IDA runs. The plugin links it into $IDAUSR/loaders.
 
-The functions are defined in this file, not imported: IDA runs a loader function with this
-file's namespace as its globals, so an imported function would lose its own module's globals.
+Both functions have to be defined here. IDA runs them with this file's globals, so functions
+imported from the package would not work.
 """
 
 from __future__ import annotations

@@ -36,6 +36,8 @@ ignore = [
     "CPY001",   # no per-file copyright headers; the license is declared in the manifests
     "PLR2004",  # hardware addresses and header offsets are the domain
     "C901", "PLR0911", "PLR0912", "PLR0913", "PLR0915",  # ported recognition/analysis routines keep their shape
+    "FIX002",   # dated TODOs are allowed
+    "TD003",    # a TODO does not need an issue link
 ]
 
 [tool.ruff.lint.flake8-quotes]

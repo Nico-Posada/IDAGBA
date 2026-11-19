@@ -1,4 +1,4 @@
-"""Load synthetic and real images through the installed plugin and loader on idalib."""
+"""Loads test images through the plugin and loader in idalib and checks the result."""
 
 from __future__ import annotations
 
@@ -59,7 +59,7 @@ VCOUNT = 0x04000006
 
 @pytest.fixture
 def load(tmp_path: Path) -> Loader:
-    """Open ROM bytes through the installed loader; yields the Database once analysis has settled."""
+    """Load ROM bytes with the loader and yield the database once analysis is done."""
 
     @contextmanager
     def _load(name: str, data: bytes, file_type: str | None = FORMAT) -> Generator[Database, None, None]:
@@ -181,7 +181,7 @@ def contains_object(item: PseudocodeExpression | PseudocodeInstruction, address:
 
 
 def hardware_loop(cfunc: PseudocodeFunction) -> bool:
-    """Some loop re-reads VCOUNT in its condition, directly or through a variable loaded in its body."""
+    """Whether some loop reads VCOUNT in its condition, directly or through a variable set in its body."""
     for loop in cfunc.find_loops():
         details = loop.while_details or loop.do_details or loop.for_details
         assert details is not None

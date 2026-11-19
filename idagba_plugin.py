@@ -1,4 +1,4 @@
-"""IDA plugin entry point for idagba: installs the loader link and manages the BIOS call lifter."""
+"""The IDA plugin. It installs the loader and turns on the decompiler hooks for GBA databases."""
 
 from __future__ import annotations
 
@@ -20,6 +20,7 @@ def PLUGIN_ENTRY() -> IdaGbaPlugin:
 
 
 class IdaGbaPlugin(ida_idaapi.plugin_t):
+    # load at startup, one instance per database, hidden from the menu
     flags = ida_idaapi.PLUGIN_FIX | ida_idaapi.PLUGIN_MULTI | ida_idaapi.PLUGIN_HIDE
     wanted_name = 'GBA loader and BIOS call lifter'
     comment = 'Installs the Game Boy Advance loader and decompiles BIOS SWI/SVC instructions as typed helper calls'
@@ -53,6 +54,7 @@ class IdaGbaPlugmod(ida_idaapi.plugmod_t):
 
 class _Opened(UIHooks):
     def database_inited(self, is_new_database: int, idc_script: str) -> None:
+        # only for databases our loader made
         if FORMAT_MARKER in (Database.open().format or ''):
             lifter.install()
 

@@ -1,16 +1,13 @@
-"""Stock devkitARM startup code (crt0): find it, read its literal pool, check what the pool describes.
+"""Finds devkitARM's startup code (crt0) in an image and reads what it says about the image.
 
-devkitARM links gba_crt0.s in front of every program it builds. The code is the same in every
-image; only the literal pool behind it differs. That pool holds the linker symbols the loader wants:
-where main is, and which sections the startup copies from the image into RAM before calling it.
+The startup code is the same in every devkitARM program. Only the literal pool after it differs.
+The pool says where main is and which sections get copied into RAM before main runs.
 
-1. find_crt0 follows the entry branches to a byte-exact copy of the startup code.
-2. Crt0.pool reads the literal pool behind that code into a LiteralPool.
-3. recover_startup checks that the copies and code pointers in the pool fit the image, and returns
-   them as a StartupRecovery.
+1. find_crt0 follows the entry branches to the startup code.
+2. Crt0.pool reads the literal pool after it.
+3. recover_startup checks the pool against the image.
 
-Recovery is all or nothing. When the startup is not the stock one, or any check fails, the result
-is a StartupRecoveryFailure and the loader leaves RAM empty and main unnamed rather than guess.
+If anything looks wrong, recovery fails and the loader leaves RAM empty and main unnamed.
 """
 
 from __future__ import annotations
@@ -29,7 +26,7 @@ if TYPE_CHECKING:
 
 @dataclass(frozen=True, slots=True)
 class StartupCopy:
-    """One section the startup copies out of the image into RAM; name labels its source in the IDB."""
+    """A section the startup copies from the image into RAM. The name labels its source in the database."""
 
     name: str
     source: int
@@ -39,10 +36,10 @@ class StartupCopy:
 
 @dataclass(frozen=True, slots=True)
 class StartupRecovery:
-    """What a validated stock startup tells about its image.
+    """What the startup code says about its image.
 
-    start and clear_mem are the addresses of start_vector and ClearMem. constructors and main keep
-    their Thumb state in bit 0. reserved lists the image ranges that are already explained.
+    start and clear_mem are the addresses of the startup code and its ClearMem helper. constructors and
+    main are pointers with the Thumb flag in bit 0. reserved lists the image ranges that are already known.
     """
 
     base: int
@@ -60,7 +57,7 @@ class StartupRecoveryFailure:
 
 
 def recover_startup(rom: bytes, base: int = BASE_ROM0) -> StartupRecovery | StartupRecoveryFailure:
-    """Recover the startup of an image loaded at base, or say why that is not possible."""
+    """Recover the startup of an image loaded at base, or return why it failed."""
     crt0 = find_crt0(rom)
     if isinstance(crt0, StartupRecoveryFailure):
         return crt0
@@ -77,12 +74,12 @@ def _recover(crt0: Crt0, base: int) -> StartupRecovery:
         msg = 'startup literal pool leaves the input'
         raise LoadError(msg)
 
+    # must be linked for this load address
     require(pool.text_start == base, 'startup is not linked for this image base')
     image = (base, base + len(crt0.rom))
     start = base + crt0.offset
 
-    # Ranges that are already explained: the header, the startup with its pool, and the branches
-    # that lead to it. No section may be copied out of them and no code pointer may land in them.
+    # the header, the startup code and the entry branches are already known, so nothing else can use them
     reserved = [
         (base, base + HEADER_SIZE),
         (start, base + crt0.pool_offset + LiteralPool.FORMAT.size),
@@ -90,7 +87,7 @@ def _recover(crt0: Crt0, base: int) -> StartupRecovery:
     ]
     copies = _copies(pool)
 
-    # The source of a copy is data, so it is explained as well.
+    # the copy sources are known too
     reserved += _check_copies(copies, image, reserved)
     for name, pointer in (('__libc_init_array', pool.libc_init_array), ('main', pool.main)):
         require(code_pointer(pointer, image, copies, reserved), f'invalid {name} code pointer {pointer:#x}')
@@ -108,7 +105,7 @@ def _recover(crt0: Crt0, base: int) -> StartupRecovery:
 
 @dataclass(frozen=True, slots=True)
 class LiteralPool:
-    """The literal pool behind the startup code: the value of every linker symbol it loads."""
+    """The literal pool after the startup code. Each field is a linker symbol the code loads."""
 
     # Layout order taken from the `ldr rX, =symbol` loads in
     # https://github.com/devkitPro/devkitarm-crtls/blob/333d62c/gba_crt0.s#L65-L183
@@ -142,11 +139,9 @@ class LiteralPool:
 
 @dataclass(frozen=True, slots=True)
 class Crt0:
-    """A stock startup found in an image.
+    """The startup code found in an image.
 
-    Every offset is a file offset, so no load address is needed yet: offset is start_vector,
-    clear_mem is ClearMem, pool_offset is the literal pool, and entry_branches are the branches
-    followed from the file start to get here.
+    All offsets are file offsets. entry_branches are the branches that lead from the file start to the code.
     """
 
     rom: bytes = field(repr=False)
@@ -155,7 +150,7 @@ class Crt0:
     pool_offset: int
     entry_branches: tuple[int, ...]
 
-    # The assembled startup code and the offset of ClearMem in it
+    # the assembled startup code and the offset of ClearMem in it
     REVISIONS: ClassVar[tuple[tuple[bytes, int], ...]] = (
         (
             # https://github.com/devkitPro/devkitarm-crtls/blob/333d62c/gba_crt0.s#L58-L253
@@ -201,7 +196,7 @@ class Crt0:
 
     @classmethod
     def at(cls, rom: bytes, offset: int, entry_branches: tuple[int, ...]) -> Crt0 | None:
-        """The stock startup at a file offset, if one is there."""
+        """The startup code at a file offset, if it is there."""
         for code, clear_mem in cls.REVISIONS:
             if rom.startswith(code, offset):
                 return cls(rom, offset, offset + clear_mem, offset + len(code), entry_branches)
@@ -209,7 +204,7 @@ class Crt0:
         return None
 
     def pool(self) -> LiteralPool | None:
-        """The literal pool behind the code, or None when the file ends inside it."""
+        """The literal pool after the code, or None when the file ends inside it."""
         if self.pool_offset + LiteralPool.FORMAT.size > len(self.rom):
             return None
 
@@ -217,7 +212,7 @@ class Crt0:
 
 
 def find_crt0(rom: bytes) -> Crt0 | StartupRecoveryFailure:
-    """Follow the chain of ARM branches from the file start to a stock startup."""
+    """Follow the ARM branches from the file start to the startup code."""
     max_branches = 4
     offset = 0
     branches = []
@@ -249,8 +244,8 @@ def _within(inner: tuple[int, int], outer: tuple[int, int]) -> bool:
 
 
 def _copies(pool: LiteralPool) -> list[StartupCopy]:
-    """The sections the startup copies into RAM, without those that leave nothing to populate."""
-    # Source, destination and length taken from the CopyMemChk and CopyMem calls in
+    """The sections the startup copies into RAM. Empty ones and ones copied onto themselves are left out."""
+
     # https://github.com/devkitPro/devkitarm-crtls/blob/333d62c/gba_crt0.s#L130-L163
     copies = [
         _copy(
@@ -279,7 +274,7 @@ def _copies(pool: LiteralPool) -> list[StartupCopy]:
         ),
     ]
 
-    # A section linked where it is loaded is copied onto itself, as .ewram is in a multiboot image.
+    # a section linked where it is loaded is copied onto itself, as .ewram is in a multiboot image
     return [copy for copy in copies if copy.size and copy.source != copy.destination]
 
 
@@ -293,7 +288,7 @@ def _copy(name: str, source: int, destination: int, size: int) -> StartupCopy:
 def _check_copies(
     copies: Sequence[StartupCopy], image: tuple[int, int], reserved: Sequence[tuple[int, int]]
 ) -> list[tuple[int, int]]:
-    """Source range of every copy, once each reads unexplained image bytes and writes RAM of its own."""
+    """Check every copy and return their source ranges."""
     ewram = (BASE_EWRAM, BASE_EWRAM + SIZE_EWRAM)
     iwram = (BASE_IWRAM, BASE_IWRAM + SIZE_IWRAM)
     sources, destinations = [], []
@@ -301,7 +296,7 @@ def _check_copies(
         source = (copy.source, copy.source + copy.size)
         destination = (copy.destination, copy.destination + copy.size)
 
-        # Some sanity checks
+        # some sanity checks
         require(
             copy.source % 4 == copy.destination % 4 == 0,
             f'{copy.name}: unaligned copy',
@@ -315,7 +310,7 @@ def _check_copies(
             f'{copy.name}: destination leaves canonical RAM',
         )
 
-        # A multiboot image is itself loaded into EWRAM
+        # a multiboot image is itself loaded into EWRAM
         require(
             not _overlaps(destination, image),
             f'{copy.name}: destination overlaps the loaded image',
@@ -338,17 +333,17 @@ def _check_copies(
 def code_pointer(
     pointer: int, image: tuple[int, int], copies: Sequence[StartupCopy], reserved: Sequence[tuple[int, int]]
 ) -> bool:
-    """Whether pointer (Thumb state in bit 0) can lead to code: unexplained image bytes or a RAM copy.
-
-    Post-analysis asks this too, for pointers it finds in literal pools and IRQ vector stores.
-    """
+    """Whether a pointer can lead to code. Bit 0 of the pointer is the Thumb flag."""
     address = pointer & ~1
     width = 2 if pointer & 1 else 4
     if address % width:
         return False
 
     instruction = (address, address + width)
+
+    # a pointer into the image must miss the known ranges
     if _within(instruction, (image[0] + HEADER_SIZE, image[1])):
         return not any(_overlaps(instruction, span) for span in reserved)
 
+    # any other pointer must land in a RAM copy
     return any(_within(instruction, (copy.destination, copy.destination + copy.size)) for copy in copies)

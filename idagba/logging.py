@@ -1,4 +1,4 @@
-"""Messages for IDA's output window, prefixed by severity."""
+"""Messages for IDA's output window."""
 
 from __future__ import annotations
 

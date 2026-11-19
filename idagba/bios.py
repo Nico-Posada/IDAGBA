@@ -1,6 +1,6 @@
-"""GBA BIOS SWI call names and Hex-Rays prototypes.
+"""BIOS call names and their decompiler prototypes.
 
-Undocumented SoundWhatever0..4 (0x20..0x24) have no prototype: they stay inline asm.
+SoundWhatever0 to 4 (0x20 to 0x24) are undocumented, so they have no prototype and stay inline asm.
 """
 
 from __future__ import annotations
@@ -65,4 +65,5 @@ BIOS_PROTOTYPES = {
 
 
 def decode_swi_number(value: int, *, thumb: bool) -> int:
+    # thumb keeps the number in 8 bits, arm in bits 16-23
     return value & 0xFF if thumb else (value >> 16) & 0xFF

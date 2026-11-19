@@ -1,4 +1,4 @@
-"""Make IDA discover the loader: IDA scans only its loaders/ directories."""
+"""Puts the loader file where IDA looks for loaders."""
 
 from __future__ import annotations
 
@@ -10,11 +10,11 @@ if TYPE_CHECKING:
 
 
 def install_loader_link(loaders_dir: Path, target: Path) -> Path:
-    """Make loaders_dir/<target.name> resolve to target: a symlink, or a copy where symlinks are refused.
+    """Link target into loaders_dir, or copy it where symlinks are not allowed.
 
     Raises:
-        FileExistsError: a regular file with that name exists and is not a copy of an idagba entry file.
-        OSError: the directory, the link and the copy cannot be created.
+        FileExistsError: a file with that name exists and is not ours.
+        OSError: the link or the copy could not be created.
     """
     link = loaders_dir / target.name
     loaders_dir.mkdir(parents=True, exist_ok=True)
@@ -22,7 +22,8 @@ def install_loader_link(loaders_dir: Path, target: Path) -> Path:
         if link.resolve() == target.resolve():
             return link
 
-        link.unlink()  # stale or dangling: the plugin directory moved
+        # loader stub is stale, delete it
+        link.unlink()
     elif link.exists():
         if _first_line(link) != _first_line(target):
             msg = f'{link} exists and was not installed by idagba'
@@ -31,7 +32,8 @@ def install_loader_link(loaders_dir: Path, target: Path) -> Path:
         if link.read_bytes() == target.read_bytes():
             return link
 
-        link.unlink()  # outdated copy from an earlier version
+        # we have an outdated copy, delete it
+        link.unlink()
 
     try:
         link.symlink_to(target)

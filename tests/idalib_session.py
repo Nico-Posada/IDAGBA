@@ -1,4 +1,4 @@
-"""Start idalib once, against an isolated IDAUSR whose only plugin is this package."""
+"""Starts idalib once with a temporary IDAUSR whose only plugin is this package."""
 
 from __future__ import annotations
 
@@ -26,7 +26,7 @@ def _ida_directory() -> str | None:
 
 
 def start() -> None:
-    """Start the IDA kernel, or skip the importing test module when IDA is unavailable."""
+    """Start IDA, or skip the test module that imports this when IDA is not installed."""
     directory = _ida_directory()
     if directory is None:
         pytest.skip('no IDA installation: set IDADIR or ~/.idapro/ida-config.json', allow_module_level=True)

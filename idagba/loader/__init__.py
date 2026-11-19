@@ -1,10 +1,4 @@
-"""IDA-side GBA loader: maps the image, annotates hardware, applies crt0, seeds analysis and plans FLIRT signatures.
-
-Thumb BL long-jump recognition is enabled before analysis so internal branches
-do not split functions and turn stack locals into bogus arguments. Existing IDBs
-with such splits need a fresh load or manual function-boundary repair; changing
-the option alone does not remove old function definitions.
-"""
+"""The loader. It maps the image, labels the hardware, applies the startup recovery and sets up analysis."""
 
 from __future__ import annotations
 
@@ -35,11 +29,17 @@ if TYPE_CHECKING:
 
 def load_file(li: loader_input_t, neflags: int, format_name: str) -> int:
     try:
+        # prereqs
         require(
             not neflags & ida_loader.NEF_RELOAD and neflags & ida_loader.NEF_FIRST,
-            'Only a fresh first-file load is supported; reload/additional-file loads are refused',
+            'IDAGBA only a does first-file loads, reloads/additional loads are not supported',
         )
-        require(format_name in (FORMAT, RELAXED_FORMAT, MB_FORMAT), 'Unsupported selected format')
+        require(
+            format_name in (FORMAT, RELAXED_FORMAT, MB_FORMAT),
+            'Unsupported selected format',
+        )
+
+        # initial file opening
         multiboot = format_name == MB_FORMAT
         size = li.size()
         require(
@@ -49,15 +49,23 @@ def load_file(li: loader_input_t, neflags: int, format_name: str) -> int:
         li.seek(0)
         rom = li.read(size)
         require(len(rom) == size, 'Short cartridge read')
+
+        # getting rom information
+        # only the extension of the name matters here
         expected = recognize(rom, size, 'input.mb' if multiboot else 'input.gba')
         require(expected == format_name, 'Header does not match the selected recognition path')
         image = Image(rom, BASE_EWRAM if multiboot else BASE_ROM0)
         facts = header_facts(image)
         require(ida_idp.set_processor_type('ARM:ARM7TDMI', ida_idp.SETPROC_LOADER), 'Cannot select ARM7TDMI processor')
-        # Thumb-1 compilers also use BL for long intra-function jumps.
+
+        # thumb-1 compilers also use BL for long intra-function jumps
         ida_idp.process_config_directive('ARM_DISABLE_BL_JUMPS = NO')
+
+        # set 32bit-le
         ida_ida.inf_set_app_bitness(32)
         ida_ida.inf_set_be(False)  # noqa: FBT003
+
+        # set up the db
         db = Database.open()
         require(not ida_ida.inf_is_be() and db.bitness == 32, 'Cannot establish 32-bit little-endian addressing')
         _setup_database(Annotator(db, image), li, facts)
@@ -69,19 +77,27 @@ def load_file(li: loader_input_t, neflags: int, format_name: str) -> int:
 
 
 def _setup_database(annotator: Annotator, li: loader_input_t, facts: HeaderFacts) -> None:
+    # create all the regions/segments
     db, image = annotator.db, annotator.image
     map_image(db, li, image)
+
+    # label things like I/O registers, struct defs, etc
     annotator.hardware()
+
+    # do things like the IWRAM copies and whatnot
     recovery = recover_startup(image.rom, image.base)
     apply_recovery(annotator, recovery)
+
+    # the "report" that gets logged in the console and noted by the entrypoint
     annotator.report(facts, recovery)
+
     seed_analysis(annotator, recovery)
     _plan_signatures()
     schedule_post_analysis(db, image, recovery)
 
 
 def _plan_signatures() -> None:
-    """Queue the runtime-library signatures built by sig/build.py; IDA applies them as analysis runs."""
+    """Queue the FLIRT signatures in sig/. IDA applies them during analysis."""
     for sig in sorted((Path(__file__).resolve().parents[2] / 'sig').glob('*.sig')):
         if not ida_funcs.plan_to_apply_idasgn(str(sig)):
             warn(f'Cannot apply FLIRT signature {sig.name}')

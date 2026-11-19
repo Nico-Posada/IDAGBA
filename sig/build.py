@@ -1,24 +1,18 @@
-"""Build the FLIRT signatures next to this script from the runtime libraries of the two GBA toolchains.
+"""Builds the FLIRT signatures in this directory from the libraries of the two GBA toolchains.
 
-- `gba_agbcc.sig`: libgcc and libc of pret/agbcc, the rebuilt gcc 2.9x of Nintendo's AGB SDK that
-  commercial games were compiled with.
-- `gba_devkitarm.sig`: devkitARM's libgcc, newlib libc/libm and libsysbase (ARM and Thumb multilibs),
-  plus libgba, libtonc and maxmod, used by homebrew.
+gba_agbcc.sig covers libgcc and libc of pret/agbcc, the compiler of Nintendo's SDK.
+gba_devkitarm.sig covers devkitARM's libgcc, newlib and libsysbase, plus libgba, libtonc and maxmod.
 
-Steps: drop libgcc's fixed-point members, run pelf on every archive, run sigmake, and if it reports
-collisions keep one name per group of identical modules and run sigmake again. pelf gives Thumb
-functions an odd offset; IDA reads that as Thumb state, so it stays.
-
-Inputs, all on Linux (the shipped files come from agbcc da598c1 and devkitARM r68: gcc 16.1.0, newlib 4.6.0,
-libgba 0.5.4, libtonc 1.4.5, maxmod 1.0.15):
+Run it on Linux.
 
     git clone https://github.com/pret/agbcc && (cd agbcc && ./build.sh)
     docker cp "$(docker create devkitpro/devkitarm)":/opt/devkitpro devkitpro
     uv run sig/build.py "$IDADIR/tools/flair" agbcc devkitpro
 
-Build with the flair tools of IDA 9.2 to 9.4. Their sigmake writes signature format 10, which every
-supported IDA reads. The sigmake of IDA 9.5 writes format 11, and IDA 9.4 and older refuse such a
-file with "unexpected signature file version" and name nothing.
+Use the flair tools of IDA 9.2 to 9.4. The sigmake of IDA 9.5 writes a newer format that older IDA cannot read.
+
+The shipped files were built from agbcc da598c1 and devkitARM r68 (gcc 16.1.0, newlib 4.6.0, libgba 0.5.4,
+libtonc 1.4.5, maxmod 1.0.15).
 """
 
 from __future__ import annotations
@@ -96,9 +90,9 @@ class _Builder:
 
 
 def _keep_one_per_collision(exc: Path) -> None:
-    """Select one more module in each group sigmake could not split by the names the modules reference.
+    """Pick one module in each group of collisions that sigmake wrote to the exclusion file.
 
-    The modules left unselected in a group are identical down to their references (abs/labs), so any name is right.
+    The modules in a group are identical, so any of their names is right.
     """
     text = '\n'.join(line for line in exc.read_text().splitlines() if not line.startswith(';'))
     groups = []

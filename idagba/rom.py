@@ -1,4 +1,4 @@
-"""The loaded image and its cartridge header facts."""
+"""The image and what its header says."""
 
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ HEADER_SIZE = 0xC0
 
 @dataclass(frozen=True, slots=True)
 class Image:
-    """A complete image and its load address; the base alone tells a cartridge from a multiboot image."""
+    """An image and its load address. A multiboot image is one loaded at the start of EWRAM."""
 
     rom: bytes = field(repr=False)
     base: int = BASE_ROM0
@@ -28,7 +28,7 @@ class Image:
 
     @property
     def entry(self) -> int:
-        """The header's branch for a cartridge; the BIOS enters a multiboot image right after its header."""
+        """Where execution starts. A cartridge starts at its first byte, a multiboot image after the header."""
         return self.base + (HEADER_SIZE if self.multiboot else 0)
 
     @property
@@ -37,7 +37,7 @@ class Image:
 
     @property
     def views(self) -> tuple[tuple[int, str], ...]:
-        """Address and name suffix of every static view of the image."""
+        """The address and name suffix of every place the image shows up in memory."""
         if self.multiboot:
             return ((self.base, ''),)
 
@@ -47,7 +47,7 @@ class Image:
 
 @dataclass(frozen=True, slots=True)
 class HeaderFacts:
-    """Raw parsed header facts; byte fields are escaped only when displayed."""
+    """The header fields, as read from the image."""
 
     size: int
     title: bytes
@@ -70,7 +70,10 @@ class HeaderFacts:
 def header_facts(image: Image) -> HeaderFacts:
     rom, base = image.rom, image.base
     entry = image.entry - base
+
+    # https://mgba-emu.github.io/gbatek/#0bdh---complement-check-1-byte
     checksum = (-sum(rom[0xA0:0xBD]) - 0x19) & 0xFF
+
     warnings = []
     if rom[0xB2] != 0x96:
         warnings.append(f'fixed header byte is {rom[0xB2]:#04x}, not 0x96 (unfixed header)')
@@ -135,6 +138,7 @@ def logo_matches(header: bytes | bytearray) -> bool:
     """)
     logo = bytearray(header[4:0xA0])
 
+    # ignore the flag bits inside the logo
     for offset, mask in ((0x9C, 0x84), (0x9E, 0x03)):
         logo[offset - 4] &= ~mask & 0xFF
         expected[offset - 4] &= ~mask & 0xFF
@@ -143,6 +147,7 @@ def logo_matches(header: bytes | bytearray) -> bool:
 
 
 def arm_branch_target(word: int, ea: int) -> int | None:
+    # only an unconditional ARM branch (b)
     if word & 0xFF000000 != 0xEA000000:
         return None
 

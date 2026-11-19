@@ -1,4 +1,4 @@
-"""Synthetic GBA images; the templates are kept independent of the production tables on purpose."""
+"""Test images built in memory. The startup code here is its own copy and is not imported from the package."""
 
 from __future__ import annotations
 
@@ -84,7 +84,7 @@ def _finish_header(rom: bytearray, entry: int = 0x080000C0) -> None:
 
 
 def make_synthetic(thumb: tuple[int, ...] = THUMB_TEMPLATE) -> tuple[bytes, dict[int, int]]:
-    """Build the shifted crt0 fixture without importing production tables."""
+    """A cartridge with the startup code at 0x240 and a small Thumb main."""
     rom = bytearray(0x1000)
     start = BASE + 0x240
     _finish_header(rom, BASE + 0x220)
@@ -129,7 +129,7 @@ def make_synthetic(thumb: tuple[int, ...] = THUMB_TEMPLATE) -> tuple[bytes, dict
 
 
 def make_long_jump() -> bytes:
-    """Thumb BL used as an intra-function jump beyond the short-B range."""
+    """A function that uses a Thumb BL as a long jump inside itself."""
     rom = bytearray(make_synthetic()[0])
     rom[0x700:0x738] = bytes(0x38)
     # PUSH {r4,lr}; SUB sp,#16; MOV r4,#7; STR r4,[sp]; BL 0x08000F20.
@@ -140,7 +140,7 @@ def make_long_jump() -> bytes:
 
 
 def make_palette() -> bytes:
-    """Write both ends of OBJ palette RAM and the user's two BG colors."""
+    """Code that writes BG and OBJ palette entries."""
     rom = bytearray(make_synthetic()[0])
     # LDR address/value; STRH, followed by BX LR and an aligned literal pool.
     struct.pack_into(
@@ -161,7 +161,7 @@ def make_large() -> bytes:
 
 
 def make_multiboot() -> bytes:
-    """The shifted crt0 fixture relinked for EWRAM, entered by the BIOS at 0xC0."""
+    """The same image linked for EWRAM, as a multiboot image."""
     rom, literals = make_synthetic()
     rom = bytearray(rom)
     struct.pack_into('<I', rom, 0xC0, _branch(BASE + 0xC0, BASE + 0x220))
@@ -178,7 +178,7 @@ def make_multiboot() -> bytes:
 
 
 def make_vote(value: int) -> bytes:
-    """No crt0: one ARM PC-relative literal load right after the header."""
+    """An image without startup code whose first instruction loads one literal."""
     rom = bytearray(0x200)
     _finish_header(rom)
     struct.pack_into('<I', rom, 0xC0, 0xE59F0000 | (0x100 - 0xC8))
@@ -187,10 +187,10 @@ def make_vote(value: int) -> bytes:
 
 
 def make_indirect() -> bytes:
-    """ARM main: stores an IRQ handler, calls Thumb via mov lr,pc; bx, and issues an ARM SWI.
+    """ARM main that stores an IRQ handler, calls a Thumb function through bx and makes a BIOS call.
 
-    The Thumb callee returns quotient + remainder of BIOS Div, so both result registers matter.
-    An unreferenced Thumb routine at 0x960 adds 1 to r0 across Halt, which preserves registers.
+    The Thumb function returns the quotient plus the remainder of BIOS Div. A second Thumb routine at
+    0x960 calls Halt.
     """
     rom, literals = make_synthetic()
     rom = bytearray(rom)
@@ -217,9 +217,9 @@ def make_indirect() -> bytes:
 
 
 def make_veneers() -> bytes:
-    """Thumb main reaches ARM code in IWRAM through a linker veneer and a Thumb routine through a bx r3 helper.
+    """Thumb main that calls ARM code in IWRAM through a linker veneer and a Thumb routine through bx r3.
 
-    That routine adds 2 to r0 and leaves through the same veneer, so the veneer is also the target of a tail jump.
+    The Thumb routine also leaves through the veneer, as a tail jump.
     """
     rom = bytearray(make_synthetic()[0])
     rom[0x700:0x780] = bytes(0x80)
