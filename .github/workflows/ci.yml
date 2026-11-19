@@ -76,7 +76,7 @@ jobs:
           version="$(jq -r .plugin.version ida-plugin.json)"
           mkdir dist
           git archive --format=zip --output "dist/idagba-${version}.zip" HEAD \
-            ida-plugin.json idagba_plugin.py idagba loaders sig README.md LICENSE
+            ida-plugin.json idagba_plugin.py idagba loaders sig docs/icon.png README.md LICENSE
           unzip -l "dist/idagba-${version}.zip"
 
       - name: Lint the archive

@@ -9,3 +9,4 @@
 /.secrets.baseline export-ignore
 /.gitignore export-ignore
 /.gitattributes export-ignore
+/docs/img export-ignore
