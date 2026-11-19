@@ -179,6 +179,9 @@ class Annotator:
 
         lines += [f'Warning: {warning}' for warning in facts.warnings]
 
+        # add the comments to the entry point before adding the sloppy dkA comments
+        self.comment(base, '\n'.join(lines))
+
         if isinstance(recovery, StartupRecoveryFailure):
             lines.append(f'Startup recovery not applied: {recovery.reason}')
         else:
@@ -188,6 +191,6 @@ class Annotator:
                 for copy in recovery.copies
             )
 
-        self.comment(base, '\n'.join(lines))
+        # log everything to the console
         for line in lines:
             log(line)

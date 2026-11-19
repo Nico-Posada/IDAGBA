@@ -601,7 +601,7 @@ def test_real(load: Loader):
         assert has_xref(db, 0x08003C02, 0x030018DC)
         assert has_xref(db, 0x08003C24, 0x030018DC)
         entry_comment = repeatable_comment(db, BASE)
-        for clue in ('ROM TITLE', 'SBTP', '27', 'SRAM_V113'):
+        for clue in ('ROM TITLE', 'SBTP', 'SRAM_V113'):
             assert clue in entry_comment
 
         for ea in (0x08000870, 0x08012B20, 0x030018DC):
