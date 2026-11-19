@@ -13,7 +13,7 @@
 
 ## Overview
 
-IDAGBA is a loader and decompiler plugin for Game Boy Advanced ROMs that fills this in when you load a file:
+IDAGBA is a loader and decompiler plugin for Game Boy Advance ROMs that fills this in when you load a file:
 
 - The console's memory map
 - A name for every I/O register
