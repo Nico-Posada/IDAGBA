@@ -149,12 +149,12 @@ def show_instructions(db: Database, *addresses: int) -> None:
 
 
 def decompile(db: Database, ea: int) -> PseudocodeFunction:
-    """Decompile, or skip the rest of the test when the IDA licence has no 32-bit ARM decompiler."""
+    """Decompile, or skip the rest of the test when the IDA license has no 32-bit ARM decompiler."""
     try:
         return db.pseudocode.decompile(ea)
     except PseudocodeError as exc:
         if 'LICENSE' in str(exc):
-            pytest.skip(f'no ARM decompiler licence; the checks before this point passed ({exc})')
+            pytest.skip(f'no ARM decompiler license; the checks before this point passed ({exc})')
 
         raise
 

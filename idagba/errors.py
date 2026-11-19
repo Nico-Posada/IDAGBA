@@ -1,4 +1,4 @@
-"""Loader failure signalling shared by the pure checks and the IDA-side loader."""
+"""Loader failure signaling shared by the pure checks and the IDA-side loader."""
 
 from __future__ import annotations
 
