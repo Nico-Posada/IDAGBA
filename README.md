@@ -27,8 +27,9 @@ IDAGBA is a loader and decompiler plugin for Game Boy Advance ROMs that fills th
 
 ![main decompiled by stock IDA and with IDAGBA](docs/img/main.png)
 
-Left: IDA alone, with the ROM loaded as a raw ARM binary at `0x08000000` and the entry point marked as code by hand.
-Right: the same file opened with IDAGBA and no manual work to find main.
+**Left**: IDA alone, with the ROM loaded as a raw ARM binary at `0x08000000` and the entry point marked as code by hand.
+
+**Right**: the same file opened with IDAGBA and no manual work to find main.
 
 <details>
 <summary>The program in the screenshots</summary>
@@ -66,40 +67,39 @@ int main(void) {
 
 ## What it does
 
-### It finds `main`
+### Finds `main`
 
 IDAGBA is able to recognize devkitARM's startup code, name its parts, and then jump to the real `main` automatically.
 
 ![Where the cursor is after loading: stock IDA at the first byte of the ROM, IDAGBA at main](docs/img/landing.png)
 
-### It builds the memory map
+### Builds the memory map
 
 Stock IDA doesn't know anything about the address space, so IDAGBA recreates the whole thing from scratch.
 
 ![The Segments window in stock IDA and with IDAGBA](docs/img/segments.png)
 
-### It names the I/O registers
+### Labels the I/O registers
 
 All 99 registers get a name, a type, and a short description, following information from [GBATEK](https://problemkaputt.de/gbatek.htm).
 
 ![The start of the I/O segment](docs/img/io.png)
 
-### It fills in the RAM
+### Initializes RAM
 
-IDAGBA recognizes the startup routines that initialize RAM, works out what they copy where, and does the same
-copies while loading.
+IDAGBA recognizes the startup routines that initialize RAM, works out what they copy where, and does the same copies while loading.
 
 ![irqInit storing an interrupt handler that lives in RAM, in stock IDA and with IDAGBA](docs/img/irq.png)
 
 ![The interrupt handler in the IWRAM segment](docs/img/iwram.png)
 
-### It handles call stubs
+### Handles call stubs
 
 Thumb code will often call far functions through a small stub. Stock IDA will only show you a call to the stub where it wants the real call to be a function arg, but IDAGBA installs a lifter to show you the call directly to avoid all of that.
 
 ![The call to fade_in and what it leads to, decompiled by stock IDA and with IDAGBA](docs/img/stubs.png)
 
-### It ships with FLIRT signatures
+### Loads FLIRT signatures
 
 Signatures for the two GBA toolchains ship with the plugin:
 
@@ -108,7 +108,7 @@ Signatures for the two GBA toolchains ship with the plugin:
 
 ![The Functions window in stock IDA and with IDAGBA](docs/img/functions.png)
 
-### It turns BIOS calls into function calls
+### Turns BIOS calls into function calls
 
 The normal decompiler shows a BIOS call as inline assembly, but IDAGBA installs a lifter that turns them into typed calls to make your decomps much nicer.
 
