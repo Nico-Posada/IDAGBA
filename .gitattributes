@@ -6,7 +6,6 @@
 /uv.lock export-ignore
 /.python-version export-ignore
 /.pre-commit-config.yaml export-ignore
-/.secrets.baseline export-ignore
 /.gitignore export-ignore
 /.gitattributes export-ignore
 /docs/img export-ignore
