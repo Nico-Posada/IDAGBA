@@ -163,12 +163,9 @@ Written by **Nico Posada** ([@Nico-Posada](https://github.com/Nico-Posada)).
 
 IDAGBA stands on other people's work:
 
-- [GBATEK](https://problemkaputt.de/gbatek.htm) by Martin Korth, the hardware reference behind the memory map, the registers and the BIOS calls
-- [devkitPro](https://devkitpro.org/) for devkitARM, libgba, libtonc and maxmod
-- [pret/agbcc](https://github.com/pret/agbcc), the rebuilt compiler of Nintendo's SDK
-- [ida-domain](https://github.com/HexRaysSA/ida-domain) by Hex-Rays
-
-Game Boy Advance is a trademark of Nintendo. This project is not affiliated with Nintendo or Hex-Rays.
+- [GBATEK](https://problemkaputt.de/gbatek.htm): a great reference for all things GBA
+- [devkitPro](https://devkitpro.org/): devkitARM, libgba, libtonc and maxmod
+- [ida-domain](https://github.com/HexRaysSA/ida-domain): Hex-Rays's new Python API to make these types of projects much easier to make.
 
 ## License
 
