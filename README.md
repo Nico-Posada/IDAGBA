@@ -81,7 +81,7 @@ Stock IDA doesn't know anything about the address space, so IDAGBA recreates the
 
 ### Labels the I/O registers
 
-All 99 registers get a name, a type, and a short description, following information from [GBATEK](https://problemkaputt.de/gbatek.htm).
+There are 99 I/O registers. IDAGBA names them all, gives them types, and gives them a short description following information from [GBATEK](https://problemkaputt.de/gbatek.htm).
 
 ![The start of the I/O segment](docs/img/io.png)
 
@@ -95,16 +95,18 @@ IDAGBA recognizes the startup routines that initialize RAM, works out what they 
 
 ### Handles call stubs
 
-Thumb code will often call far functions through a small stub. Stock IDA will only show you a call to the stub where it wants the real call to be a function arg, but IDAGBA installs a lifter to show you the call directly to avoid all of that.
+Thumb code will often call far functions through a small stub. Stock IDA will only show you a call to the stub where it thinks the real call is a function arg, so IDAGBA installs a lifter to show you the call directly to avoid all of that.
 
 ![The call to fade_in and what it leads to, decompiled by stock IDA and with IDAGBA](docs/img/stubs.png)
 
 ### Loads FLIRT signatures
 
-Signatures for the two GBA toolchains ship with the plugin:
+The plugin ships signatures for the two common toolchains GBA software is built with.
 
-- **devkitARM**, used by homebrew: libgcc, newlib, libgba, libtonc and maxmod
-- **agbcc**, the compiler of Nintendo's SDK that commercial games were built with: libgcc and libc
+| Toolchain | Used for | Libraries covered |
+| --- | --- | --- |
+| devkitARM | homebrew | libgcc, newlib, libgba, libtonc, maxmod |
+| agbcc, the compiler from Nintendo's SDK | commercial games | libgcc, libc |
 
 ![The Functions window in stock IDA and with IDAGBA](docs/img/functions.png)
 
@@ -153,7 +155,7 @@ The Output window says what was found:
 [GBA] Post-analysis pass: 1 veneer calls, 1 IRQ handlers, 3 BIOS calls
 ```
 
-Finding `main` and filling the RAM need devkitARM's own startup code. A game with custom startup code still gets everything else.
+The automated parsing and jumping to `main` only happens if the ROM uses devkitARM. Even if the ROM you want to analyze doesn't use it, the rest of the features will still work fine.
 
 ## Credits
 
