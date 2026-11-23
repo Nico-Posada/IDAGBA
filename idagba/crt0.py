@@ -1,8 +1,6 @@
 """Finds devkitARM's startup code (crt0) in an image and reads what it says about the image.
 
-The startup code is the same in every devkitARM program. Only the literal pool after it differs.
-The pool says where main is and which sections get copied into RAM before main runs.
-
+The general flow of what happens here is:
 1. find_crt0 follows the entry branches to the startup code.
 2. Crt0.pool reads the literal pool after it.
 3. recover_startup checks the pool against the image.
@@ -26,7 +24,7 @@ if TYPE_CHECKING:
 
 @dataclass(frozen=True, slots=True)
 class StartupCopy:
-    """A section the startup copies from the image into RAM. The name labels its source in the database."""
+    """A section the startup copies from the image into RAM."""
 
     name: str
     source: int
@@ -36,18 +34,20 @@ class StartupCopy:
 
 @dataclass(frozen=True, slots=True)
 class StartupRecovery:
-    """What the startup code says about its image.
-
-    start and clear_mem are the addresses of the startup code and its ClearMem helper. constructors and
-    main are pointers with the Thumb flag in bit 0. reserved lists the image ranges that are already known.
-    """
+    """What the startup code says about its image."""
 
     base: int
+
+    # addresses of the startup code and its ClearMem helper
     start: int
     clear_mem: int
     copies: tuple[StartupCopy, ...]
+
+    # pointers with the thumb flag in bit 0
     constructors: int
     main: int
+
+    # image ranges that are already known
     reserved: tuple[tuple[int, int], ...]
 
 
@@ -139,15 +139,16 @@ class LiteralPool:
 
 @dataclass(frozen=True, slots=True)
 class Crt0:
-    """The startup code found in an image.
-
-    All offsets are file offsets. entry_branches are the branches that lead from the file start to the code.
-    """
+    """The startup code found in an image."""
 
     rom: bytes = field(repr=False)
+
+    # file offsets of the startup code, its ClearMem helper and the literal pool
     offset: int
     clear_mem: int
     pool_offset: int
+
+    # file offsets of the branches that lead from the file start to the code
     entry_branches: tuple[int, ...]
 
     # the assembled startup code and the offset of ClearMem in it

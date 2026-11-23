@@ -1,4 +1,4 @@
-"""Thumb state helpers. They use the raw SDK because ida_domain has no segment register API."""
+"""Thumb state helpers. They use the raw SDK because ida_domain has no segment register API (booooo)."""
 
 from __future__ import annotations
 

@@ -1,5 +1,3 @@
-"""The error the loader raises for bad input or a failed IDA call."""
-
 from __future__ import annotations
 
 

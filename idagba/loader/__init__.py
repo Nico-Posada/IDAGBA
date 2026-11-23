@@ -1,4 +1,4 @@
-"""The loader. It maps the image, labels the hardware, applies the startup recovery and sets up analysis."""
+"""The actual loader code. It maps the image, labels the hardware, applies the startup recovery and sets up analysis."""
 
 from __future__ import annotations
 
@@ -51,7 +51,7 @@ def load_file(li: loader_input_t, neflags: int, format_name: str) -> int:
         require(len(rom) == size, 'Short cartridge read')
 
         # getting rom information
-        # only the extension of the name matters here
+        # only the extension of the name matters here (hardcoded names below dont matter)
         expected = recognize(rom, size, 'input.mb' if multiboot else 'input.gba')
         require(expected == format_name, 'Header does not match the selected recognition path')
         image = Image(rom, BASE_EWRAM if multiboot else BASE_ROM0)

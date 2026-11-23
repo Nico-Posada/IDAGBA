@@ -1,4 +1,10 @@
-"""Puts the loader file where IDA looks for loaders."""
+"""Puts the loader file where IDA looks for loaders.
+
+Implementation idea mostly taken from https://github.com/williballenthin/idawilli/tree/master/plugins/vtloader
+
+Surely if an IDA employee does it this way then it's ok to do :clueless:
+(if anyone at hexrays is reading this, pls add proper loader support to hcli)
+"""
 
 from __future__ import annotations
 

@@ -1,8 +1,4 @@
-"""Passes that run after IDA's own analysis.
-
-Each pass names BIOS calls, links calls through bx veneers to their targets and finds the IRQ handler.
-The passes repeat while they find new code, four times at most.
-"""
+"""The passes that run after IDA's own analysis."""
 
 from __future__ import annotations
 
@@ -94,6 +90,7 @@ class PostAnalysis(DatabaseHooks):
     def _annotate_swis(self) -> int:
         db = self.db
         count = 0
+
         # Every pass rescans all analyzed instructions.
         for function_ea in self._function_starts():
             function = db.functions.get_at(function_ea)
@@ -198,6 +195,7 @@ class PostAnalysis(DatabaseHooks):
         """Find the handlers that code stores into the BIOS IRQ vector."""
         db = self.db
         count = 0
+
         # The BIOS IRQ handler pointer, at its own address and through the IWRAM mirror.
         for vector in (BASE_IWRAM + 0x7FFC, BASE_IWRAM_MIRROR + 0x7FFC):
             for load in self._vector_loads(vector):

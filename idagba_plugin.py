@@ -1,5 +1,3 @@
-"""The IDA plugin. It installs the loader and turns on the decompiler hooks for GBA databases."""
-
 from __future__ import annotations
 
 from pathlib import Path
@@ -34,6 +32,9 @@ class IdaGbaPlugin(ida_idaapi.plugin_t):
 class IdaGbaPlugmod(ida_idaapi.plugmod_t):
     def __init__(self) -> None:
         super().__init__()
+
+        # do super sketchy installation of loader into the loaders directory
+        # (this is required until the plugin repository properly supports custom loaders)
         loader_entry = Path(__file__).resolve().parent / 'loaders' / 'idagba_loader.py'
         try:
             install_loader_link(Path(ida_diskio.get_user_idadir()) / 'loaders', loader_entry)

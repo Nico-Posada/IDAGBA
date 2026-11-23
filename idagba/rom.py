@@ -1,4 +1,4 @@
-"""The image and what its header says."""
+"""ROM header/general binary information classes/helpers"""
 
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ HEADER_SIZE = 0xC0
 
 @dataclass(frozen=True, slots=True)
 class Image:
-    """An image and its load address. A multiboot image is one loaded at the start of EWRAM."""
+    """Information about the loaded ROM image."""
 
     rom: bytes = field(repr=False)
     base: int = BASE_ROM0
@@ -28,7 +28,7 @@ class Image:
 
     @property
     def entry(self) -> int:
-        """Where execution starts. A cartridge starts at its first byte, a multiboot image after the header."""
+        """Where execution starts on the given ROM."""
         return self.base + (HEADER_SIZE if self.multiboot else 0)
 
     @property
@@ -85,13 +85,13 @@ def header_facts(image: Image) -> HeaderFacts:
         warnings.append('Nintendo logo is damaged or nonstandard')
 
     if rom[0xB3]:
-        warnings.append(f'unexpected unit code {rom[0xB3]:#x}')
+        warnings.append(f'got unexpected unit code at offset 0xB3: {rom[0xB3]:#x}')
 
     if any(rom[0xB5:0xBC]) or any(rom[0xBE:0xC0]):
         warnings.append('nonzero reserved header bytes')
 
     if image.entry_target is None:
-        warnings.append(f'unusual or out-of-payload ARM entry instruction; entry remains at {base + entry:#010x}')
+        warnings.append('unusual or out-of-payload ARM entry instruction, none was recorded...')
 
     return HeaderFacts(
         size=len(rom),
