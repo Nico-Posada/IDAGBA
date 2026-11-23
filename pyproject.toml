@@ -1,6 +1,6 @@
 [project]
 name = "IDAGBA"
-version = "0.1.0"
+version = "1.0.0"
 description = "Game Boy Advance ROM and multiboot loader plus a Hex-Rays lifter for BIOS SWI calls."
 requires-python = ">=3.11"
 license = "MIT"
