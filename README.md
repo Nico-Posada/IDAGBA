@@ -4,7 +4,7 @@
 
 # IDAGBA
 
-**A loader for Game Boy Advance ROMs in IDA Pro**
+**A loader and plugin for Game Boy Advance (GBA) ROMs in IDA Pro**
 
 [![IDA Pro 9.1+](https://img.shields.io/badge/IDA%20Pro-9.1%2B-2f81f7)](https://hex-rays.com/ida-pro) [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-3776ab?logo=python&logoColor=white)](https://www.python.org/) [![License: MIT](https://img.shields.io/badge/license-MIT-3fb950)](LICENSE)
 
