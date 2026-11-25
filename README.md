@@ -125,9 +125,11 @@ The normal decompiler shows a BIOS call as inline assembly, but IDAGBA installs 
 
 ## Installation
 
-> [!NOTE]
-> **TODO.** IDAGBA is not in the Hex-Rays plugin repository yet. Once it is, installing it will be one
-> [`hcli`](https://hcli.docs.hex-rays.com/) command.
+It is recommended to install the plugin using ida's [hcli](https://hex-rays.com/blog/introducing-hcli) tool
+
+```bash
+hcli plugin install idagba
+```
 
 It needs IDA Pro 9.1 or newer and Python 3.11 or newer. The BIOS call feature also needs the ARM decompiler.
 
